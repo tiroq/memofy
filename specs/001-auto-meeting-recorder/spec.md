@@ -65,11 +65,12 @@ As a user, I want to see the current recording status at a glance and configure 
 **Acceptance Scenarios**:
 
 1. **Given** the application is running, **When** I click the menu bar icon, **Then** I see current status (IDLE/WAIT/REC/ERROR), active mode (Auto/Manual/Paused), and which application last triggered detection
-2. **Given** the application is idle, **When** it detects a meeting and enters the waiting/debounce state, **Then** the menu bar icon updates to WAIT state
+2. **Given** the application is idle, **When** it detects a meeting and enters the waiting state, **Then** the menu bar icon updates to WAIT state within 6-9 seconds
 3. **Given** recording is in progress, **When** I view the menu bar dropdown, **Then** I see "REC" status and can access "Stop Recording" and "Open Recordings Folder"
-4. **Given** an error occurs (OBS disconnected, permissions missing), **When** I check the menu bar, **Then** I see ERROR status with a brief description
-5. **Given** I access Settings, **When** I modify Teams or Zoom window title hints, **Then** detection uses the new hints for future detection
-6. **Given** I want to review what happened, **When** I click "Open Logs," **Then** the logs folder opens showing detection events and OBS actions
+4. **Given** an error occurs (backend disconnected, permissions missing), **When** the error is detected, **Then** I see ERROR status in menu bar AND receive a macOS system notification with actionable guidance
+5. **Given** I access Settings, **When** I modify Teams or Zoom detection rules (window title hints, process patterns), **Then** detection uses the new rules for future detection immediately
+6. **Given** I want to review what happened, **When** I click "Open Logs," **Then** the logs folder opens showing detection events, state transitions, and recording actions
+7. **Given** I complete a meeting, **When** I check the recordings folder, **Then** I see files named with format `YYYY-MM-DD_HHMM_Application_Title.mp4` for easy identification
 
 ---
 
@@ -164,11 +165,12 @@ As a user, I want to see the current recording status at a glance and configure 
 
 ### Measurable Outcomes
 
-- **SC-001**: System correctly identifies meeting start within 15 seconds with 95% accuracy for standard Teams and Zoom configurations
-- **SC-002**: System correctly identifies meeting end and stops recording within 30 seconds with 95% accuracy
-- **SC-003**: Users experience zero recording file fragmentation for meetings longer than 2 minutes under normal conditions
+- **SC-001**: System correctly identifies meeting start and begins recording within 6-15 seconds with 95% accuracy for configured Teams and Zoom setups
+- **SC-002**: System correctly identifies meeting end and stops recording within 12-25 seconds with 95% accuracy
+- **SC-003**: Users experience zero recording file fragmentation for meetings longer than 2 minutes under normal conditions (protected by 6-detection stop threshold)
 - **SC-004**: Manual control commands (start/stop/pause) execute within 2 seconds of user interaction
-- **SC-005**: System maintains stable OBS WebSocket connection with reconnection successful within 10 seconds for 99% of connection interruptions
+- **SC-005**: System maintains stable connection to recording backend with automatic reconnection successful within 10 seconds for 99% of connection interruptions
 - **SC-006**: Zero black screen recordings when required permissions are granted and recording backend is properly configured
-- **SC-007**: Menu bar status updates reflect actual system state within seconds of state changes
-- **SC-008**: 90% of users successfully configure detection hints for their localized Teams/Zoom versions within 5 minutes
+- **SC-007**: Menu bar status updates reflect actual system state within 2-3 seconds of state changes
+- **SC-008**: 90% of users successfully configure detection rules for their localized Teams/Zoom versions during initial setup
+- **SC-009**: Recording files are named with timestamp + application + title format, enabling easy chronological sorting and identification
