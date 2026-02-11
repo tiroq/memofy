@@ -20,16 +20,16 @@ This task breakdown organizes work by user story to enable independent implement
 
 ### Tasks
 
-- [ ] T001 Initialize Go module in project root with `go mod init github.com/tiroq/memofy`
-- [ ] T002 [P] Create directory structure: cmd/, internal/, pkg/, tests/, scripts/, configs/
-- [ ] T003 [P] Create subdirectories: cmd/memofy-core/, cmd/memofy-ui/, internal/{detector,statemachine,obsws,ipc,config}, pkg/macui/, tests/{integration,fixtures}
-- [ ] T004 [P] Install gorilla/websocket dependency with `go get github.com/gorilla/websocket@latest`
-- [ ] T005 [P] Install progrium/macdriver dependency with `go get github.com/progrium/macdriver@latest`
-- [ ] T006 [P] Install fsnotify dependency with `go get github.com/fsnotify/fsnotify@latest`
-- [ ] T007 Create Makefile in project root with build, clean, test, run-core, run-ui targets
-- [ ] T008 Create default detection rules JSON config in configs/default-detection-rules.json
-- [ ] T009 Create .gitignore with Go patterns, bin/, .cache/, .DS_Store
-- [ ] T010 Run `go mod tidy` and verify all dependencies resolve
+- [X] T001 Initialize Go module in project root with `go mod init github.com/tiroq/memofy`
+- [X] T002 [P] Create directory structure: cmd/, internal/, pkg/, tests/, scripts/, configs/
+- [X] T003 [P] Create subdirectories: cmd/memofy-core/, cmd/memofy-ui/, internal/{detector,statemachine,obsws,ipc,config}, pkg/macui/, tests/{integration,fixtures}
+- [X] T004 [P] Install gorilla/websocket dependency with `go get github.com/gorilla/websocket@latest`
+- [X] T005 [P] Install progrium/darwinkit (formerly macdriver) dependency with `go get github.com/progrium/darwinkit@latest`
+- [X] T006 [P] Install fsnotify dependency with `go get github.com/fsnotify/fsnotify@latest`
+- [X] T007 Create Makefile in project root with build, clean, test, run-core, run-ui targets
+- [X] T008 Create default detection rules JSON config in configs/default-detection-rules.json
+- [X] T009 Create .gitignore with Go patterns, bin/, .cache/, .DS_Store
+- [X] T010 Run `go mod tidy` and verify all dependencies resolve
 
 ---
 
@@ -41,31 +41,31 @@ This task breakdown organizes work by user story to enable independent implement
 
 ### Tasks
 
-- [ ] T011 Define StatusSnapshot struct in internal/ipc/status.go with all fields from data-model.md
-- [ ] T012 [P] Define DetectionState struct in internal/detector/detector.go
-- [ ] T013 [P] Define RecordingState struct in internal/obsws/client.go
-- [ ] T014 [P] Define OperatingMode constants (ModeAuto, ModeManual, ModePaused) in internal/ipc/status.go
-- [ ] T015 [P] Define Command constants (CmdStart, CmdStop, CmdToggle, CmdAuto, CmdPause, CmdQuit) in internal/ipc/commands.go
-- [ ] T016 Implement atomic file write function (temp + rename) in internal/ipc/status.go
-- [ ] T017 Implement WriteStatus function to persist StatusSnapshot to ~/.cache/memofy/status.json
-- [ ] T018 [P] Implement ReadStatus function to load StatusSnapshot from file
-- [ ] T019 [P] Implement WriteCommand function to write command to ~/.cache/memofy/cmd.txt
-- [ ] T020 [P] Implement ReadCommand function to read and clear cmd.txt
-- [ ] T021 Define DetectionRule and DetectionConfig structs in internal/config/detection_rules.go
-- [ ] T022 Implement LoadDetectionRules function to read from ~/.config/memofy/detection-rules.json
-- [ ] T023 [P] Implement SaveDetectionRules function with validation (thresholds >= 1, stop >= start)
-- [ ] T024 Create state machine struct in internal/statemachine/machine.go with startStreak, stopStreak counters
-- [ ] T025 Implement state machine Update(detected bool) method with 3/6 threshold logic
-- [ ] T026 Implement state machine Reset() method to clear counters
-- [ ] T027 Write table-driven tests for state machine in internal/statemachine/machine_test.go covering all transitions
-- [ ] T028 Define OBS WebSocket client struct in internal/obsws/client.go with connection state tracking
-- [ ] T029 Implement OBS WebSocket Connect() with handshake (Hello → Identify → Identified)
-- [ ] T030 [P] Implement GetRecordStatus() request/response handling with 5s timeout
-- [ ] T031 [P] Implement StartRecord() request/response handling
-- [ ] T032 [P] Implement StopRecord() request/response handling
-- [ ] T033 Implement reconnection logic with exponential backoff (5s, 10s, 20s, max 60s)
-- [ ] T034 [P] Implement RecordStateChanged event subscription and handler
-- [ ] T035 Create mock OBS responses fixture in tests/fixtures/mock_obs_responses.json
+- [X] T011 Define StatusSnapshot struct in internal/ipc/status.go with all fields from data-model.md
+- [X] T012 [P] Define DetectionState struct in internal/detector/detector.go
+- [X] T013 [P] Define RecordingState struct in internal/obsws/client.go
+- [X] T014 [P] Define OperatingMode constants (ModeAuto, ModeManual, ModePaused) in internal/ipc/status.go
+- [X] T015 [P] Define Command constants (CmdStart, CmdStop, CmdToggle, CmdAuto, CmdPause, CmdQuit) in internal/ipc/commands.go
+- [X] T016 Implement atomic file write function (temp + rename) in internal/ipc/status.go
+- [X] T017 Implement WriteStatus function to persist StatusSnapshot to ~/.cache/memofy/status.json
+- [X] T018 [P] Implement ReadStatus function to load StatusSnapshot from file
+- [X] T019 [P] Implement WriteCommand function to write command to ~/.cache/memofy/cmd.txt
+- [X] T020 [P] Implement ReadCommand function to read and clear cmd.txt
+- [X] T021 Define DetectionRule and DetectionConfig structs in internal/config/detection_rules.go
+- [X] T022 Implement LoadDetectionRules function to read from ~/.config/memofy/detection-rules.json
+- [X] T023 [P] Implement SaveDetectionRules function with validation (thresholds >= 1, stop >= start)
+- [X] T024 Create state machine struct in internal/statemachine/machine.go with startStreak, stopStreak counters
+- [X] T025 Implement state machine Update(detected bool) method with 3/6 threshold logic
+- [X] T026 Implement state machine Reset() method to clear counters
+- [X] T027 Write table-driven tests for state machine in internal/statemachine/machine_test.go covering all transitions
+- [X] T028 Define OBS WebSocket client struct in internal/obsws/client.go with connection state tracking
+- [X] T029 Implement OBS WebSocket Connect() with handshake (Hello → Identify → Identified)
+- [X] T030 [P] Implement GetRecordStatus() request/response handling with 5s timeout
+- [X] T031 [P] Implement StartRecord() request/response handling
+- [X] T032 [P] Implement StopRecord() request/response handling
+- [X] T033 Implement reconnection logic with exponential backoff (5s, 10s, 20s, max 60s)
+- [X] T034 [P] Implement RecordStateChanged event subscription and handler
+- [X] T035 Create mock OBS responses fixture in tests/fixtures/mock_obs_responses.json
 
 ---
 
@@ -77,20 +77,20 @@ This task breakdown organizes work by user story to enable independent implement
 
 ### Tasks
 
-- [ ] T036 [US1] Define Detector interface in internal/detector/detector.go with Detect() method
-- [ ] T037 [P] [US1] Implement ZoomDetector in internal/detector/zoom.go checking zoom.us process + CptHost/window
-- [ ] T038 [P] [US1] Implement TeamsDetector in internal/detector/teams.go checking Microsoft Teams process + window
-- [ ] T039 [US1] Implement macOS process detection using NSWorkspace.runningApplications in internal/detector/detector.go
-- [ ] T040 [US1] Implement window title detection using Accessibility APIs (AXUIElement) in internal/detector/detector.go
-- [ ] T041 [US1] Implement DetectMeeting aggregator function that runs all detectors and returns DetectionState
-- [ ] T042 [US1] Create daemon main loop in cmd/memofy-core/main.go with 2s ticker for detection polling
-- [ ] T043 [US1] Integrate state machine into daemon: call Update() on each detection poll result
-- [ ] T044 [US1] Implement recording start action: when state machine returns START_RECORDING action, call OBS StartRecord()
-- [ ] T045 [US1] Implement recording stop action: when state machine returns STOP_RECORDING action, call OBS StopRecord()
-- [ ] T046 [US1] Implement status update: write StatusSnapshot to file after each state change
-- [ ] T047 [US1] Add startup checks for OBS connection and macOS permissions (Screen Recording, Accessibility)
-- [ ] T048 [US1] Implement permission check functions using CGPreflightScreenCaptureAccess and AXIsProcessTrusted
-- [ ] T049 [US1] Add logging to /tmp/memofy-core.out.log and /tmp/memofy-core.err.log with detection reasoning
+- [X] T036 [US1] Define Detector interface in internal/detector/detector.go with Detect() method
+- [X] T037 [P] [US1] Implement ZoomDetector in internal/detector/zoom.go checking zoom.us process + CptHost/window
+- [X] T038 [P] [US1] Implement TeamsDetector in internal/detector/teams.go checking Microsoft Teams process + window
+- [X] T039 [US1] Implement macOS process detection using NSWorkspace.runningApplications in internal/detector/detector.go
+- [X] T040 [US1] Implement window title detection using Accessibility APIs (AXUIElement) in internal/detector/detector.go
+- [X] T041 [US1] Implement DetectMeeting aggregator function that runs all detectors and returns DetectionState
+- [X] T042 [US1] Create daemon main loop in cmd/memofy-core/main.go with 2s ticker for detection polling
+- [X] T043 [US1] Integrate state machine into daemon: call Update() on each detection poll result
+- [X] T044 [US1] Implement recording start action: when state machine returns START_RECORDING action, call OBS StartRecord()
+- [X] T045 [US1] Implement recording stop action: when state machine returns STOP_RECORDING action, call OBS StopRecord()
+- [X] T046 [US1] Implement status update: write StatusSnapshot to file after each state change
+- [X] T047 [US1] Add startup checks for OBS connection and macOS permissions (Screen Recording, Accessibility)
+- [X] T048 [US1] Implement permission check functions using CGPreflightScreenCaptureAccess and AXIsProcessTrusted
+- [X] T049 [US1] Add logging to /tmp/memofy-core.out.log and /tmp/memofy-core.err.log with detection reasoning
 - [ ] T050 [US1] Test automatic recording with Zoom meeting (start → wait 3 detections → record → end → wait 6 → stop)
 - [ ] T051 [US1] Test automatic recording with Teams meeting (same flow as Zoom)
 - [ ] T052 [US1] Test fragmentation prevention: verify short interruption (5-10s) doesn't create multiple files
@@ -105,16 +105,16 @@ This task breakdown organizes work by user story to enable independent implement
 
 ### Tasks
 
-- [ ] T053 [US2] Implement command file watcher using fsnotify in cmd/memofy-core/main.go
+- [X] T053 [US2] Implement command file watcher using fsnotify in cmd/memofy-core/main.go
 - [ ] T054 [US2] Add fallback polling (1s interval) for command file if fsnotify fails
-- [ ] T055 [US2] Implement command handler switch statement for all commands (start, stop, toggle, auto, pause, quit)
-- [ ] T056 [P] [US2] Implement CmdStart handler: set mode to manual, call StartRecord() immediately
-- [ ] T057 [P] [US2] Implement CmdStop handler: call StopRecord() immediately
-- [ ] T058 [P] [US2] Implement CmdToggle handler: if recording, stop; else start
-- [ ] T059 [P] [US2] Implement CmdAuto handler: set mode to auto, resume detection-based control
-- [ ] T060 [P] [US2] Implement CmdPause handler: set mode to paused, suspend all detection
-- [ ] T061 [P] [US2] Implement CmdQuit handler: stop recording if active, cleanup, exit gracefully
-- [ ] T062 [US2] Update detection loop to skip actions when mode is Manual or Paused
+- [X] T055 [US2] Implement command handler switch statement for all commands (start, stop, toggle, auto, pause, quit)
+- [X] T056 [P] [US2] Implement CmdStart handler: set mode to manual, call StartRecord() immediately
+- [X] T057 [P] [US2] Implement CmdStop handler: call StopRecord() immediately
+- [X] T058 [P] [US2] Implement CmdToggle handler: if recording, stop; else start
+- [X] T059 [P] [US2] Implement CmdAuto handler: set mode to auto, resume detection-based control
+- [X] T060 [P] [US2] Implement CmdPause handler: set mode to paused, suspend all detection
+- [X] T061 [P] [US2] Implement CmdQuit handler: stop recording if active, cleanup, exit gracefully
+- [X] T062 [US2] Update detection loop to skip actions when mode is Manual or Paused
 - [ ] T063 [US2] Test manual start command while no meeting detected (should start immediately)
 - [ ] T064 [US2] Test manual stop command while recording (should stop immediately)
 - [ ] T065 [US2] Test mode switching: auto → manual → auto (detection resumes after switching back)
