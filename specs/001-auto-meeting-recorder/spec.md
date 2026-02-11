@@ -5,6 +5,16 @@
 **Status**: Draft  
 **Input**: User description: "macOS menu bar application that automatically records Teams/Zoom meetings via OBS using intelligent detection and stable state control"
 
+## Clarifications
+
+### Session 2026-02-12
+
+- Q: What format should recording filenames use? → A: Timestamp + Application + Title format (e.g., `2026-02-12_1430_Zoom_Q1-Planning.mp4`)
+- Q: How many consecutive detections are needed before starting recording? → A: 3 consecutive successful detections (6-9 seconds)
+- Q: How should users configure detection rules for localized Teams/Zoom versions? → A: User configures rules during initial setup and can reconfigure anytime via Settings
+- Q: How should the system notify users of critical errors? → A: Menu bar indicator + macOS system notification with actionable guidance
+- Q: How many consecutive non-detections before stopping recording? → A: 6 consecutive non-detections (12-18 seconds)
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Automatic Meeting Detection and Recording (Priority: P1)
@@ -17,12 +27,12 @@ As a remote worker, I join Teams or Zoom meetings throughout my day and want the
 
 **Acceptance Scenarios**:
 
-1. **Given** recording backend is running and configured, **When** I start a Zoom meeting, **Then** the application detects the meeting within 10 seconds and begins recording within 15 seconds total
-2. **Given** a recording is in progress, **When** I end the Zoom meeting, **Then** the recording stops within 30 seconds of the meeting ending
-3. **Given** recording backend is running and configured, **When** I start a Microsoft Teams meeting, **Then** the application detects the meeting within 10 seconds and begins recording within 15 seconds total
-4. **Given** a recording is in progress, **When** I end the Teams meeting, **Then** the recording stops within 30 seconds of the meeting ending
-5. **Given** I have a short interruption (5-10 seconds) during a meeting, **When** the meeting continues, **Then** the application does not create multiple recording files
-6. **Given** no meeting is active, **When** I have Teams or Zoom running but not in a meeting, **Then** no recording is started
+1. **Given** recording backend is running and configured, **When** I start a Zoom meeting, **Then** the application detects the meeting and begins recording within 6-15 seconds
+2. **Given** a recording is in progress, **When** I end the Zoom meeting, **Then** the recording stops within 12-25 seconds of the meeting ending
+3. **Given** recording backend is running and configured, **When** I start a Microsoft Teams meeting, **Then** the application detects the meeting and begins recording within 6-15 seconds
+4. **Given** a recording is in progress, **When** I end the Teams meeting, **Then** the recording stops within 12-25 seconds of the meeting ending
+5. **Given** I have a short interruption (5-10 seconds) during a meeting, **When** the meeting continues, **Then** the application does not create multiple recording files (protected by 6-detection stop threshold)
+6. **Given** no meeting is active, **When** I have Teams or Zoom running but not in a meeting, **Then** no recording is started (prevented by 3-detection start threshold)
 
 ---
 
@@ -66,17 +76,19 @@ As a user, I want to see the current recording status at a glance and configure 
 ### Edge Cases
 
 - What happens when recording backend is not running or not properly configured?
-  - Application shows ERROR status and notifies user that recording backend connection is required
+  - Application shows ERROR status in menu bar and sends macOS system notification with actionable guidance to configure recording backend
 - What happens when required operating system permissions are not granted?
-  - Application detects missing permissions, shows ERROR status, and provides guidance to enable them
+  - Application detects missing permissions, shows ERROR status in menu bar, and sends system notification with link to System Preferences
 - What happens when I rapidly switch between meetings or join/leave multiple times?
-  - Debounce state machine prevents recording fragmentation by requiring stable state for 6-18 seconds before stopping
+  - Debounce state machine prevents recording fragmentation by requiring 6 consecutive non-detections (12-18 seconds) before stopping
 - What happens when both Teams and Zoom are running simultaneously?
   - Detection prioritizes whichever application first shows meeting activity; tracks both independently
 - What happens if recording backend connection is lost during recording?
-  - Application attempts automatic reconnection and logs the event; shows ERROR status but does not falsely report recording state
+  - Application attempts automatic reconnection and logs the event; shows ERROR status in menu bar and sends notification but does not falsely report recording state
 - What happens if I manually delete or move the status file while the monitoring service is running?
   - Monitoring service recreates the status file on next update cycle
+- What happens to the meeting title in the filename if it cannot be detected?
+  - System uses generic placeholder (e.g., `2026-02-12_1430_Zoom_Meeting.mp4`) instead of specific title
 
 ## Requirements *(mandatory)*
 
@@ -86,18 +98,19 @@ As a user, I want to see the current recording status at a glance and configure 
 
 - **FR-001**: System MUST detect when user has joined a Zoom meeting
 - **FR-002**: System MUST detect when user has joined a Microsoft Teams meeting
-- **FR-003**: System MUST support configurable detection rules to handle different language versions and regional variations of meeting applications
-- **FR-004**: System MUST check for active meetings at regular intervals (every few seconds)
+- **FR-003**: System MUST support configurable detection rules to handle different language versions and regional variations of meeting applications, with users configuring rules during initial setup and able to reconfigure anytime via Settings
+- **FR-004**: System MUST check for active meetings at regular intervals (every 2-3 seconds)
 
 #### State Management and Recording Control
 
-- **FR-005**: System MUST wait for stable meeting state before starting recording to prevent false triggers from brief application switches
-- **FR-006**: System MUST wait for confirmed meeting end before stopping recording to prevent fragmentation from temporary disconnections
+- **FR-005**: System MUST require 3 consecutive successful meeting detections (6-9 seconds) before starting recording to prevent false triggers from brief application switches
+- **FR-006**: System MUST require 6 consecutive non-detections (12-18 seconds) before stopping recording to prevent fragmentation from temporary disconnections
 - **FR-007**: System MUST maintain connection to recording backend and recover from temporary disconnections
 - **FR-008**: System MUST initiate recording only after confirming stable meeting state
 - **FR-009**: System MUST stop recording only after confirming meeting has ended
 - **FR-010**: System MUST verify current recording status before making state changes
 - **FR-011**: System MUST support three operating modes: Auto (detection-based), Manual (user-controlled), and Paused (suspended)
+- **FR-011A**: System MUST name recording files using format: `YYYY-MM-DD_HHMM_Application_Meeting-Title.mp4` (e.g., `2026-02-12_1430_Zoom_Q1-Planning.mp4`) where meeting title is included when detectable
 
 #### Status Reporting and Command Interface
 
@@ -107,10 +120,12 @@ As a user, I want to see the current recording status at a glance and configure 
 - **FR-015**: Menu bar interface MUST display current mode (Auto/Manual/Paused) and which application last triggered detection (Teams/Zoom)
 - **FR-016**: Menu bar interface MUST provide controls: Start Recording, Stop Recording, Auto Mode, Manual Mode, Pause
 - **FR-017**: Menu bar interface MUST provide quick access to: Open Recordings Folder, Open Logs, Settings
+- **FR-017A**: Settings interface MUST allow users to configure and update detection rules (window title hints, process patterns) for Teams and Zoom at any time
 
 #### Permissions and Error Handling
 
 - **FR-018**: System MUST verify required operating system permissions are granted before attempting to record
+- **FR-018A**: System MUST notify users of critical errors through both menu bar ERROR indicator AND macOS system notifications with actionable guidance
 - **FR-019**: System MUST verify recording backend is properly configured to capture screen content
 - **FR-020**: System MUST log all detection events, state transitions, recording actions, and error recovery attempts
 - **FR-021**: System MUST attempt automatic recovery when connection to recording backend is lost
