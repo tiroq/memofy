@@ -59,67 +59,67 @@ Technical approach: Two-component Go architecture: (1) background daemon service
 ### Documentation (this feature)
 
 ```text
-specs/[###-feature]/
+specs/001-auto-meeting-recorder/
 ├── plan.md              # This file (/speckit.plan command output)
 ├── research.md          # Phase 0 output (/speckit.plan command)
 ├── data-model.md        # Phase 1 output (/speckit.plan command)
 ├── quickstart.md        # Phase 1 output (/speckit.plan command)
 ├── contracts/           # Phase 1 output (/speckit.plan command)
+│   └── obs-websocket-api.md
 └── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
 ```
 
 ### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
 
 ```text
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
-
-tests/
-├── contract/
-├── integration/
-└── unit/
-
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
-
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
+memofy/
+├── cmd/
+│   ├── memofy-core/      # Daemon service binary
+│   │   └── main.go
+│   └── memofy-ui/        # Menu bar app binary
+│       └── main.go
+├── internal/
+│   ├── detector/         # Meeting detection logic
+│   │   ├── detector.go
+│   │   ├── zoom.go
+│   │   └── teams.go
+│   ├── statemachine/     # Debounce state machine
+│   │   ├── machine.go
+│   │   └── machine_test.go
+│   ├── obsws/           # OBS WebSocket client
+│   │   ├── client.go
+│   │   └── commands.go
+│   ├── ipc/             # Inter-process communication
+│   │   ├── status.go
+│   │   └── commands.go
+│   └── config/          # Configuration management
+│       ├── config.go
+│       └── detection_rules.go
+├── pkg/
+│   └── macui/           # macOS UI helpers (cgo/Objective-C)
+│       ├── statusbar.go
+│       ├── statusbar.h
+│       ├── statusbar.m
+│       └── notifications.go
+├── tests/
+│   ├── integration/     # Integration tests
+│   │   └── state_transitions_test.go
+│   └── fixtures/        # Test data
+│       └── mock_obs_responses.json
+├── scripts/
+│   └── install-launchagent.sh
+├── configs/
+│   └── default-detection-rules.json
+├── go.mod
+├── go.sum
+├── Makefile
+└── README.md
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+**Structure Decision**: Standard Go project layout using `cmd/` for binaries, `internal/` for private application code, and `pkg/` for reusable macOS UI components. Two separate binaries in `cmd/` allow independent deployment and testing of daemon vs UI. The `internal/` packages are organized by domain concern (detection, state machine, OBS communication, IPC).
 
 ## Complexity Tracking
 
 > **Fill ONLY if Constitution Check has violations that must be justified**
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+**N/A** - No constitution violations. Project structure is appropriately minimal for requirements.
