@@ -2,7 +2,6 @@ package obsws
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,13 +15,13 @@ var upgrader = websocket.Upgrader{}
 
 // Mock OBS WebSocket server for testing
 type mockOBSServer struct {
-	server             *httptest.Server
-	sendHello          bool
-	sendIdentified     bool
-	requireAuth        bool
-	recordStatus       bool
-	recordPath         string
-	eventHandlers      map[string]func(*websocket.Conn)
+	server         *httptest.Server
+	sendHello      bool
+	sendIdentified bool
+	requireAuth    bool
+	recordStatus   bool
+	recordPath     string
+	eventHandlers  map[string]func(*websocket.Conn)
 }
 
 func newMockOBSServer() *mockOBSServer {
@@ -385,7 +384,7 @@ func TestEventHandling(t *testing.T) {
 	defer mock.Close()
 
 	client := NewClient(mock.URL(), "")
-	
+
 	eventReceived := make(chan bool, 1)
 	client.OnRecordStateChanged(func(recording bool) {
 		if recording {

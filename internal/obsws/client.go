@@ -17,7 +17,7 @@ type RecordingState struct {
 	StartTime   time.Time `json:"start_time"`
 	Duration    int       `json:"duration_seconds"` // Seconds since start
 	OutputPath  string    `json:"output_path"`
-	OBSStatus   string    `json:"obs_status"`    // "connected", "disconnected", "error"
+	OBSStatus   string    `json:"obs_status"` // "connected", "disconnected", "error"
 	OBSVersion  string    `json:"obs_version"`
 	LastUpdated time.Time `json:"last_updated"`
 }
@@ -64,9 +64,9 @@ type HelloData struct {
 }
 
 type IdentifyData struct {
-	RPCVersion       int    `json:"rpcVersion"`
-	Authentication   string `json:"authentication,omitempty"`
-	EventSubscriptions int  `json:"eventSubscriptions"`
+	RPCVersion         int    `json:"rpcVersion"`
+	Authentication     string `json:"authentication,omitempty"`
+	EventSubscriptions int    `json:"eventSubscriptions"`
 }
 
 type Request struct {
@@ -76,8 +76,8 @@ type Request struct {
 }
 
 type Response struct {
-	RequestType   string          `json:"requestType"`
-	RequestID     string          `json:"requestId"`
+	RequestType   string `json:"requestType"`
+	RequestID     string `json:"requestId"`
 	RequestStatus struct {
 		Result  bool   `json:"result"`
 		Code    int    `json:"code"`
@@ -93,14 +93,14 @@ type Event struct {
 
 // OpCodes for WebSocket protocol
 const (
-	OpHello         = 0
-	OpIdentify      = 1
-	OpIdentified    = 2
-	OpReidentify    = 3
-	OpEvent         = 5
-	OpRequest       = 6
-	OpRequestResponse = 7
-	OpRequestBatch  = 8
+	OpHello                = 0
+	OpIdentify             = 1
+	OpIdentified           = 2
+	OpReidentify           = 3
+	OpEvent                = 5
+	OpRequest              = 6
+	OpRequestResponse      = 7
+	OpRequestBatch         = 8
 	OpRequestBatchResponse = 9
 )
 
