@@ -23,9 +23,9 @@ type IconState int
 
 const (
 	IconIDLE  IconState = iota // Gray - not recording, no meeting detected
-	IconWAIT                    // Yellow - meeting detected, waiting for threshold
-	IconREC                     // Red - actively recording
-	IconERROR                   // Orange - error condition
+	IconWAIT                   // Yellow - meeting detected, waiting for threshold
+	IconREC                    // Red - actively recording
+	IconERROR                  // Orange - error condition
 )
 
 // NewStatusBarApp creates and initializes the menu bar application
@@ -37,17 +37,17 @@ func NewStatusBarApp() *StatusBarApp {
 	// Create status item in menu bar
 	statusBar := appkit.StatusBar_SystemStatusBar()
 	app.statusItem = statusBar.StatusItemWithLength(appkit.VariableStatusItemLength)
-	
+
 	// Set initial icon
 	app.updateIcon(IconIDLE)
-	
+
 	// Create menu
 	app.menu = appkit.NewMenu()
 	app.buildMenu()
-	
+
 	// Attach menu to status item
 	app.statusItem.SetMenu(app.menu)
-	
+
 	return app
 }
 
@@ -121,7 +121,7 @@ func (app *StatusBarApp) updateIcon(state IconState) {
 	}
 
 	button.SetTitle(iconText)
-	
+
 	// TODO: In production, use actual icon images instead of text
 	// image := appkit.Image_AllocImage().InitWithContentsOfFile(iconPath)
 	// button.SetImage(image)
@@ -137,7 +137,7 @@ func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
 
 	// Update menu
 	app.buildMenu()
-	
+
 	// Update status text in menu
 	statusText := app.buildStatusText(status)
 	if app.menu.NumberOfItems() > 0 {
@@ -215,9 +215,9 @@ func (app *StatusBarApp) handleSettings(_ foundation.Object, selector foundation
 }
 
 func (app *StatusBarApp) handleQuit(_ foundation.Object, selector foundation.Selector) {
-	// Send quit command to daemon  
+	// Send quit command to daemon
 	app.sendCommand(ipc.CmdQuit)
-	
+
 	// Quit UI
 	appkit.App().Terminate(nil)
 }
