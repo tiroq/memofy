@@ -30,3 +30,13 @@ go.work.sum
 # Editor/IDE
 # .idea/
 .vscode/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Memofy-specific
+bin/
+.cache/
+*.log
