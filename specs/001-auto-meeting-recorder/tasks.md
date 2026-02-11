@@ -130,19 +130,19 @@ This task breakdown organizes work by user story to enable independent implement
 
 ### Tasks
 
-- [ ] T067 [US3] Create menu bar app entry point in cmd/memofy-ui/main.go
-- [ ] T068 [US3] Implement NSStatusBar initialization using progrium/macdriver in pkg/macui/statusbar.go
-- [ ] T069 [US3] Create status bar icon loading function with 4 states: IDLE (gray), WAIT (yellow), REC (red), ERROR (orange)
-- [ ] T070 [P] [US3] Implement menu construction in pkg/macui/statusbar.go with sections: Status, Controls, Actions, Settings
-- [ ] T071 [US3] Implement status file watcher using fsnotify to detect status.json changes
-- [ ] T072 [US3] Implement menu update function to refresh icon and menu labels based on StatusSnapshot
-- [ ] T073 [P] [US3] Add menu item: "Start Recording" → writes "start" to cmd.txt
-- [ ] T074 [P] [US3] Add menu item: "Stop Recording" → writes "stop" to cmd.txt  
-- [ ] T075 [P] [US3] Add menu item: "Auto Mode" with checkmark when mode == auto → writes "auto" to cmd.txt
+- [X] T067 [US3] Create menu bar app entry point in cmd/memofy-ui/main.go
+- [X] T068 [US3] Implement NSStatusBar initialization using progrium/macdriver in pkg/macui/statusbar.go
+- [X] T069 [US3] Create status bar icon loading function with 4 states: IDLE (gray), WAIT (yellow), REC (red), ERROR (orange)
+- [X] T070 [P] [US3] Implement menu construction in pkg/macui/statusbar.go with sections: Status, Controls, Actions, Settings
+- [X] T071 [US3] Implement status file watcher using fsnotify to detect status.json changes
+- [X] T072 [US3] Implement menu update function to refresh icon and menu labels based on StatusSnapshot
+- [X] T073 [P] [US3] Add menu item: "Start Recording" → writes "start" to cmd.txt
+- [X] T074 [P] [US3] Add menu item: "Stop Recording" → writes "stop" to cmd.txt  
+- [X] T075 [P] [US3] Add menu item: "Auto Mode" with checkmark when mode == auto → writes "auto" to cmd.txt
 - [ ] T076 [P] [US3] Add menu item: "Manual Mode" → writes "start" then switches tracking
-- [ ] T077 [P] [US3] Add menu item: "Pause" → writes "pause" to cmd.txt
-- [ ] T078 [P] [US3] Add menu item: "Open Recordings Folder" → opens OBS recording directory in Finder
-- [ ] T079 [P] [US3] Add menu item: "Open Logs" → opens /tmp/ directory in Finder showing log files
+- [X] T077 [P] [US3] Add menu item: "Pause" → writes "pause" to cmd.txt
+- [X] T078 [P] [US3] Add menu item: "Open Recordings Folder" → opens OBS recording directory in Finder
+- [X] T079 [P] [US3] Add menu item: "Open Logs" → opens /tmp/ directory in Finder showing log files
 - [ ] T080 [US3] Implement macOS notification sending using NSUserNotificationCenter in pkg/macui/notifications.go
 - [ ] T081 [US3] Add notification for ERROR state with actionable guidance (deep link to System Preferences)
 - [ ] T082 [US3] Implement Settings window using NSWindow and NSView for detection rules configuration
