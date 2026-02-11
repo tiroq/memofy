@@ -50,7 +50,7 @@ func ReadCommand() (Command, error) {
 
 	// Parse and validate command
 	cmd := Command(strings.TrimSpace(string(data)))
-	
+
 	// Validate it's a known command
 	switch cmd {
 	case CmdStart, CmdStop, CmdToggle, CmdAuto, CmdPause, CmdQuit:
