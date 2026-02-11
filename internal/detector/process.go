@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/progrium/darwinkit/macos/appkit"
-	"github.com/progrium/darwinkit/macos/foundation"
 )
 
 // ProcessDetection provides utility functions for macOS process detection
