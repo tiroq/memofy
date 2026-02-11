@@ -157,6 +157,7 @@ As a user, I want to see the current recording status at a glance and configure 
 
 - Users have already configured their recording backend with appropriate settings (quality, storage location, etc.)
 - Users grant necessary operating system permissions during initial setup
+- Users configure detection rules (window title hints, process patterns) during initial setup to match their Teams/Zoom language versions
 - Meeting applications use standard installation and window management patterns
 - Users have sufficient disk space for recordings
 - System has network connectivity for meeting applications to function
