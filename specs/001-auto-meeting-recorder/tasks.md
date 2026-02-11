@@ -164,14 +164,14 @@ This task breakdown organizes work by user story to enable independent implement
 
 ### Tasks
 
-- [ ] T090 Create LaunchAgent plist template in scripts/com.memofy.core.plist with RunAtLoad, KeepAlive, log paths
-- [ ] T091 Create install script in scripts/install-launchagent.sh that copies binaries, plist, loads with launchctl
-- [ ] T092 [P] Create uninstall script in scripts/uninstall.sh that unloads and removes all files
+- [X] T090 Create LaunchAgent plist template in scripts/com.memofy.core.plist with RunAtLoad, KeepAlive, log paths
+- [X] T091 Create install script in scripts/install-launchagent.sh that copies binaries, plist, loads with launchctl
+- [X] T092 [P] Create uninstall script in scripts/uninstall.sh that unloads and removes all files
 - [ ] T093 Implement filename renaming after recording stops: OBS path → YYYY-MM-DD_HHMM_App_Title.mp4 format
 - [ ] T094 [P] Implement meeting title extraction from window title (best effort, fallback to "Meeting")
 - [ ] T095 Add comprehensive logging: detection reasoning, state transitions, OBS commands, errors
 - [ ] T096 [P] Add log rotation or size limits to prevent unbounded growth in /tmp/
-- [ ] T097 Create README.md in project root with installation, usage, troubleshooting sections
+- [X] T097 Create README.md in project root with installation, usage, troubleshooting sections
 - [ ] T098 [P] Create user guide document with screenshots of menu bar states and settings
 - [ ] T099 Test full installation flow: install → verify daemon starts at login → verify menu bar appears
 - [ ] T100 Test end-to-end: meeting start → auto record → manual stop → verify filename format correct
