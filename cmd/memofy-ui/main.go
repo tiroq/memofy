@@ -102,7 +102,7 @@ func watchStatusFile() {
 			if event.Name == statusPath && (event.Op&fsnotify.Write == fsnotify.Write || event.Op&fsnotify.Create == fsnotify.Create) {
 				// Small delay to ensure write is complete
 				time.Sleep(50 * time.Millisecond)
-				
+
 				if err := updateStatus(); err != nil {
 					log.Printf("Failed to update status: %v", err)
 				}

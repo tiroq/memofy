@@ -137,13 +137,13 @@ func main() {
 
 		case <-sigChan:
 			outLog.Println("Received shutdown signal")
-			
+
 			// Stop recording if active
 			if stateMachine.IsRecording() {
 				outLog.Println("Stopping active recording before shutdown...")
 				handleStopRecording(stateMachine, obsClient)
 			}
-			
+
 			outLog.Println("Shutting down gracefully")
 			return
 		}
@@ -160,7 +160,7 @@ func handleStartRecording(sm *statemachine.StateMachine, obs *obsws.Client, app 
 	} else if app == detector.AppTeams {
 		appName = "Teams"
 	}
-	
+
 	filename := fmt.Sprintf("%s_%s_%s.mp4",
 		now.Format("2006-01-02"),
 		now.Format("1504"),
@@ -212,7 +212,7 @@ func logDetectionResult(state *detector.DetectionState) {
 // writeStatus updates the status.json file
 func writeStatus(sm *statemachine.StateMachine, detection *detector.DetectionState, obs *obsws.Client) error {
 	recordingState := obs.GetRecordingState()
-	
+
 	status := ipc.StatusSnapshot{
 		Mode:            sm.CurrentMode(),
 		DetectionState:  *detection,
@@ -236,7 +236,7 @@ func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 
 	cmdPath := filepath.Join(os.Getenv("HOME"), ".cache", "memofy", "cmd.txt")
 	cmdDir := filepath.Dir(cmdPath)
-	
+
 	if err := watcher.Add(cmdDir); err != nil {
 		errLog.Printf("Failed to watch command directory: %v", err)
 		return
@@ -250,11 +250,11 @@ func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 			if !ok {
 				return
 			}
-			
+
 			if event.Name == cmdPath && (event.Op&fsnotify.Write == fsnotify.Write || event.Op&fsnotify.Create == fsnotify.Create) {
 				// Small delay to ensure write is complete
 				time.Sleep(50 * time.Millisecond)
-				
+
 				cmd, err := ipc.ReadCommand()
 				if err != nil || cmd == "" {
 					continue
@@ -348,10 +348,10 @@ func checkPermissions() error {
 	// For now, this is a placeholder that would use:
 	// - CGPreflightScreenCaptureAccess() for Screen Recording
 	// - AXIsProcessTrusted() for Accessibility
-	
+
 	// In production, these would call into darwinkit/macos APIs
 	outLog.Println("Permission check: Screen Recording - OK (assumed)")
 	outLog.Println("Permission check: Accessibility - OK (assumed)")
-	
+
 	return nil
 }
