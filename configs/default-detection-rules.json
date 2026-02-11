@@ -1,0 +1,19 @@
+{
+  "rules": [
+    {
+      "application": "zoom",
+      "process_names": ["zoom.us", "CptHost"],
+      "window_hints": ["Zoom Meeting", "Zoom Webinar"],
+      "enabled": true
+    },
+    {
+      "application": "teams",
+      "process_names": ["Microsoft Teams"],
+      "window_hints": ["Meeting", "Call", "Reunión", "Anruf", "会議", "Réunion"],
+      "enabled": true
+    }
+  ],
+  "poll_interval_seconds": 2,
+  "start_threshold": 3,
+  "stop_threshold": 6
+}
