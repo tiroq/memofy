@@ -18,9 +18,9 @@ type DetectionRule struct {
 // DetectionConfig holds all detection configuration
 type DetectionConfig struct {
 	Rules          []DetectionRule `json:"rules"`
-	PollInterval   int             `json:"poll_interval_seconds"`   // Detection polling interval
-	StartThreshold int             `json:"start_threshold"`         // Consecutive detections to start
-	StopThreshold  int             `json:"stop_threshold"`          // Consecutive non-detections to stop
+	PollInterval   int             `json:"poll_interval_seconds"` // Detection polling interval
+	StartThreshold int             `json:"start_threshold"`       // Consecutive detections to start
+	StopThreshold  int             `json:"stop_threshold"`        // Consecutive non-detections to stop
 }
 
 // LoadDetectionRules reads configuration from ~/.config/memofy/detection-rules.json
