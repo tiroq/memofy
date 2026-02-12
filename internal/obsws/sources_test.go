@@ -180,13 +180,14 @@ func TestSourceTypePlatformSelection(t *testing.T) {
 		var audioType, videoType string
 
 		// Simulate platform selection logic
-		if tt.platform == "darwin" {
+		switch tt.platform {
+		case "darwin":
 			audioType = "coreaudio_input_capture"
 			videoType = "macos_screen_capture"
-		} else if tt.platform == "windows" {
+		case "windows":
 			audioType = "wasapi_input_capture"
 			videoType = "monitor_capture"
-		} else if tt.platform == "linux" {
+		case "linux":
 			audioType = "pulse_input_capture"
 			videoType = "xshm_input"
 		}
