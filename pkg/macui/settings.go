@@ -24,6 +24,7 @@ func NewSettingsWindow() *SettingsWindow {
 	if err != nil {
 		log.Printf("Failed to load detection rules: %v, using defaults", err)
 		rules = &config.DetectionConfig{
+			PollInterval: 2, // Default to 2 seconds
 			Rules: []config.DetectionRule{
 				{
 					Application:  "zoom",
@@ -51,11 +52,6 @@ func NewSettingsWindow() *SettingsWindow {
 // Show displays the settings UI using AppleScript UI
 func (sw *SettingsWindow) Show() error {
 	// Create a more detailed settings form
-	zoomProcess := sw.detectionRules.Zoom.ProcessName
-	teamsProcess := sw.detectionRules.Teams.ProcessName
-	startThreshold := sw.detectionRules.StartThreshold
-	stopThreshold := sw.detectionRules.StopThreshold
-
 	script := fmt.Sprintf(`
 tell application "System Events"
 	activate
