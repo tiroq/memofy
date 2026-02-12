@@ -68,8 +68,11 @@ func (zd *ZoomDetector) Detect() (*DetectionState, error) {
 	state.RawDetections.ZoomHostRunning = hostRunning
 
 	// Check window title
-	windowMatch, _ := zd.processDetector.WindowMatches(zoomRule.WindowHints)
+	windowMatch, windowTitle := zd.processDetector.WindowMatches(zoomRule.WindowHints)
 	state.RawDetections.ZoomWindowMatch = windowMatch
+	if windowMatch {
+		state.WindowTitle = windowTitle
+	}
 
 	// Determine confidence and meeting detection
 	if hostRunning && windowMatch {
