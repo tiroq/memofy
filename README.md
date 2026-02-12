@@ -30,9 +30,20 @@ Memofy is a macOS menu bar application that automatically detects and records Zo
 
 **OBS Setup**:
 1. Install [OBS Studio](https://obsproject.com/)
-2. Enable WebSocket server: `Tools > obs-websocket Settings`
-3. Set port to `4455` (default) with no password
-4. Configure recording output path (e.g., `~/Movies`)
+2. Enable WebSocket server:
+   - Open OBS
+   - Go to `Tools > obs-websocket Settings`
+   - Enable "Enable WebSocket server" checkbox
+   - Set port to `4455` (default) with no password
+3. Optional: Pre-configure recording output path (e.g., `~/Movies`)
+
+**Automatic Setup**:
+Memofy will **automatically** on first run:
+- ✅ Start OBS if not running
+- ✅ Create audio capture source if missing
+- ✅ Create display capture source if missing
+
+See [OBS_AUTO_INITIALIZATION.md](OBS_AUTO_INITIALIZATION.md) for details.
 
 **macOS Permissions**:
 - Grant **Screen Recording** permission to Terminal (for daemon)
@@ -240,6 +251,27 @@ tail -f /tmp/memofy-core.err.log
 
 - Grant Screen Recording permission to OBS
 - Ensure OBS window capture is configured correctly
+- Check that auto-created display capture source is enabled
+
+### OBS Auto-Initialization Issues
+
+**OBS Won't Auto-Start**:
+- Ensure OBS is installed: `ls -d /Applications/OBS.app`
+- Manually start OBS: `open -a OBS`
+- Check daemon logs for errors: `tail -f /tmp/memofy-core.err.log`
+
+**WebSocket Server Error**:
+- Verify WebSocket is enabled: `Tools > obs-websocket Settings`
+- Restart OBS after enabling WebSocket
+- Check port 4455 is not in use: `lsof -i :4455`
+
+**Sources Not Auto-Created**:
+- Check daemon logs: `grep -i "sources\|source" /tmp/memofy-core.out.log`
+- Manually create sources in OBS:
+  1. Click "+" in Sources panel
+  2. Add "Audio Input Capture"
+  3. Add "Display Capture"
+- See [OBS_AUTO_INITIALIZATION.md](OBS_AUTO_INITIALIZATION.md) for details
 
 ## Development
 
