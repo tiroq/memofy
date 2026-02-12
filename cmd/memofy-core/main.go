@@ -62,17 +62,37 @@ func main() {
 	outLog.Printf("Loaded detection config: %d rules, poll_interval=%ds, thresholds=%d/%d",
 		len(cfg.Rules), cfg.PollInterval, cfg.StartThreshold, cfg.StopThreshold)
 
+	// Initialize OBS - auto-start if needed
+	outLog.Println("Checking OBS status...")
+	if err := obsws.StartOBSIfNeeded(); err != nil {
+		errLog.Printf("Failed to start OBS: %v (continuing anyway)", err)
+	}
+
 	// Initialize OBS WebSocket client
 	obsClient := obsws.NewClient(obsWebSocketURL, obsPassword)
 	if err := obsClient.Connect(); err != nil {
 		errLog.Printf("Failed to connect to OBS: %v", err)
-		errLog.Println("Make sure OBS is running with WebSocket server enabled")
+		errLog.Println("Please ensure OBS is running and WebSocket server is enabled")
+		errLog.Println("  1. Open OBS Studio")
+		errLog.Println("  2. Go to Tools > obs-websocket Settings")
+		errLog.Println("  3. Enable 'Enable WebSocket server'")
+		errLog.Println("  4. Set port to 4455 (default)")
 		os.Exit(1)
 	}
 	defer obsClient.Disconnect()
 
 	obsVersion, wsVersion, _ := obsClient.GetVersion()
 	outLog.Printf("Connected to OBS %s (WebSocket %s)", obsVersion, wsVersion)
+
+	// Validate and create required sources (audio + display capture)
+	outLog.Println("Checking OBS recording sources...")
+	if err := obsClient.EnsureRequiredSources(); err != nil {
+		errLog.Printf("Warning: Could not ensure sources: %v", err)
+		errLog.Println("  This may cause black/silent recordings")
+		errLog.Println("  Please manually add Display Capture and Audio Input sources to your scene")
+	} else {
+		outLog.Println("OBS recording sources validated (audio + display capture ready)")
+	}
 
 	// Set up event handlers
 	obsClient.OnRecordStateChanged(func(recording bool) {
