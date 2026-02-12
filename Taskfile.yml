@@ -65,19 +65,19 @@ tasks:
   test:
     desc: Run all tests
     cmds:
-      - go test -v ./...
+      - go test -timeout 30s -v ./...
 
   test-integration:
     desc: Run integration tests
     cmds:
-      - go test -v ./tests/integration/...
+      - go test -timeout 30s -v ./tests/integration/...
 
   test-coverage:
     desc: Run tests with coverage report
     cmds:
       - go test -coverprofile=coverage.out ./...
       - go tool cover -html=coverage.out -o coverage.html
-      - echo "Coverage report: coverage.html"
+      - 'echo "Coverage report: coverage.html"'
 
   lint:
     desc: Run linter
@@ -125,13 +125,13 @@ tasks:
       - echo "✓ Ready for release"
 
   release-tag:
-    desc: Create and push a release tag (usage: task release-tag VERSION=v0.2.0)
+    desc: 'Create and push a release tag (usage: task release-tag VERSION=v0.2.0)'
     deps: [release-check]
     preconditions:
       - sh: '[ -n "{{.VERSION}}" ]'
-        msg: "VERSION variable is required. Usage: task release-tag VERSION=v0.2.0"
+        msg: 'VERSION variable is required. Usage: task release-tag VERSION=v0.2.0'
       - sh: 'echo "{{.VERSION}}" | grep -qE "^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$"'
-        msg: "VERSION must follow semantic versioning: v0.2.0 or v0.2.0-rc1"
+        msg: 'VERSION must follow semantic versioning: v0.2.0 or v0.2.0-rc1'
     cmds:
       - echo "→ Creating tag {{.VERSION}}..."
       - git tag -a {{.VERSION}} -m "Release {{.VERSION}}"
@@ -139,10 +139,10 @@ tasks:
       - git push origin main {{.VERSION}}
       - echo "✓ Tag {{.VERSION}} created and pushed"
       - echo "✓ GitHub Actions will now build and publish the release"
-      - echo "→ View workflow: https://github.com/{{.REPO_OWNER}}/{{.REPO_NAME}}/actions"
+      - 'echo "→ View workflow: https://github.com/{{.REPO_OWNER}}/{{.REPO_NAME}}/actions"'
 
   release-stable:
-    desc: Create and push a stable release tag (usage: task release-stable VERSION=0.2.0)
+    desc: 'Create and push a stable release tag (usage: task release-stable VERSION=0.2.0)'
     vars:
       TAG: v{{.VERSION}}
     cmds:
@@ -151,7 +151,7 @@ tasks:
           VERSION: '{{.TAG}}'
 
   release-rc:
-    desc: Create and push a release candidate tag (usage: task release-rc VERSION=0.2.0 RC=1)
+    desc: 'Create and push a release candidate tag (usage: task release-rc VERSION=0.2.0 RC=1)'
     vars:
       TAG: v{{.VERSION}}-rc{{.RC | default "1"}}
     cmds:
@@ -160,7 +160,7 @@ tasks:
           VERSION: '{{.TAG}}'
 
   release-beta:
-    desc: Create and push a beta release tag (usage: task release-beta VERSION=0.2.0 BETA=1)
+    desc: 'Create and push a beta release tag (usage: task release-beta VERSION=0.2.0 BETA=1)'
     vars:
       TAG: v{{.VERSION}}-beta{{.BETA | default "1"}}
     cmds:
@@ -169,7 +169,7 @@ tasks:
           VERSION: '{{.TAG}}'
 
   release-alpha:
-    desc: Create and push an alpha release tag (usage: task release-alpha VERSION=0.2.0 ALPHA=1)
+    desc: 'Create and push an alpha release tag (usage: task release-alpha VERSION=0.2.0 ALPHA=1)'
     vars:
       TAG: v{{.VERSION}}-alpha{{.ALPHA | default "1"}}
     cmds:
@@ -178,10 +178,10 @@ tasks:
           VERSION: '{{.TAG}}'
 
   release-delete:
-    desc: Delete a release tag (local and remote) (usage: task release-delete VERSION=v0.2.0)
+    desc: 'Delete a release tag (local and remote) (usage: task release-delete VERSION=v0.2.0)'
     preconditions:
       - sh: '[ -n "{{.VERSION}}" ]'
-        msg: "VERSION variable is required. Usage: task release-delete VERSION=v0.2.0"
+        msg: 'VERSION variable is required. Usage: task release-delete VERSION=v0.2.0'
     cmds:
       - echo "→ Deleting local tag {{.VERSION}}..."
       - git tag -d {{.VERSION}} || true
@@ -192,13 +192,13 @@ tasks:
   release-list:
     desc: List all tags/releases
     cmds:
-      - echo "All tags:"
+      - 'echo "All tags:"'
       - git tag -l | sort -V
 
   release-status:
     desc: Check GitHub Actions workflow status
     cmds:
-      - echo "Recent workflow runs:"
+      - 'echo "Recent workflow runs:"'
       - gh run list --limit 5 || echo "Install GitHub CLI (gh) to view workflow status"
 
   # Development tasks
@@ -261,13 +261,13 @@ tasks:
   status:
     desc: Check daemon and UI status
     cmds:
-      - echo "→ LaunchAgent status:"
+      - 'echo "→ LaunchAgent status:"'
       - launchctl list | grep memofy || echo "  Not running"
       - echo ""
-      - echo "→ Process status:"
+      - 'echo "→ Process status:"'
       - ps aux | grep memofy | grep -v grep || echo "  No processes found"
       - echo ""
-      - echo "→ Binary locations:"
+      - 'echo "→ Binary locations:"'
       - ls -la {{.INSTALL_DIR}}/memofy-* 2>/dev/null || echo "  Not installed"
 
   restart:
@@ -318,7 +318,7 @@ tasks:
   docs-serve:
     desc: Serve documentation locally
     cmds:
-      - echo "Documentation files:"
+      - 'echo "Documentation files:"'
       - ls -1 docs/*.md
       - echo ""
       - echo "Open in browser or use a markdown viewer"
