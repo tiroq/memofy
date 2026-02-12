@@ -23,6 +23,9 @@ func NewMultiDetector(cfg *config.DetectionConfig) *MultiDetector {
 	// Add Teams detector
 	md.detectors = append(md.detectors, NewTeamsDetector(cfg.Rules))
 
+	// Add Google Meet detector
+	md.detectors = append(md.detectors, NewGoogleMeetDetector(cfg.Rules))
+
 	return md
 }
 
@@ -88,11 +91,13 @@ func (md *MultiDetector) Detect() (*DetectionState, error) {
 // mergeRawDetections combines detection signals with OR logic
 func mergeRawDetections(a, b RawDetection) RawDetection {
 	return RawDetection{
-		ZoomProcessRunning:  a.ZoomProcessRunning || b.ZoomProcessRunning,
-		ZoomHostRunning:     a.ZoomHostRunning || b.ZoomHostRunning,
-		ZoomWindowMatch:     a.ZoomWindowMatch || b.ZoomWindowMatch,
-		TeamsProcessRunning: a.TeamsProcessRunning || b.TeamsProcessRunning,
-		TeamsWindowMatch:    a.TeamsWindowMatch || b.TeamsWindowMatch,
+		ZoomProcessRunning:     a.ZoomProcessRunning || b.ZoomProcessRunning,
+		ZoomHostRunning:        a.ZoomHostRunning || b.ZoomHostRunning,
+		ZoomWindowMatch:        a.ZoomWindowMatch || b.ZoomWindowMatch,
+		TeamsProcessRunning:    a.TeamsProcessRunning || b.TeamsProcessRunning,
+		TeamsWindowMatch:       a.TeamsWindowMatch || b.TeamsWindowMatch,
+		GoogleMeetRunning:      a.GoogleMeetRunning || b.GoogleMeetRunning,
+		GoogleMeetWindowMatch:  a.GoogleMeetWindowMatch || b.GoogleMeetWindowMatch,
 	}
 }
 
