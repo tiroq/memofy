@@ -68,7 +68,9 @@ func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
 	if app.currentStatus == nil {
 		// First update - show initial notification
 		app.currentStatus = status
-		SendNotification("Memofy", "Monitoring Active", "Automatic meeting detector started")
+		if err := SendNotification("Memofy", "Monitoring Active", "Automatic meeting detector started"); err != nil {
+			log.Printf("Warning: failed to send notification: %v", err)
+		}
 		return
 	}
 
@@ -88,11 +90,15 @@ func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
 	if isRecording && !app.previousRecording {
 		// Started recording
 		app.recordingStartTime = time.Now()
-		SendNotification("Memofy", "Recording Started", getDetectedAppString(status))
+		if err := SendNotification("Memofy", "Recording Started", getDetectedAppString(status)); err != nil {
+			log.Printf("Warning: failed to send notification: %v", err)
+		}
 	} else if !isRecording && app.previousRecording {
 		// Stopped recording
 		duration := time.Since(app.recordingStartTime)
-		SendNotification("Memofy", "Recording Stopped", fmt.Sprintf("Duration: %s", formatDuration(duration)))
+		if err := SendNotification("Memofy", "Recording Stopped", fmt.Sprintf("Duration: %s", formatDuration(duration))); err != nil {
+			log.Printf("Warning: failed to send notification: %v", err)
+		}
 	}
 	app.previousRecording = isRecording
 
@@ -100,7 +106,9 @@ func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
 	if status.LastError != "" && status.LastError != app.lastErrorShown {
 		app.lastErrorShown = status.LastError
 		app.lastErrorTime = time.Now()
-		SendErrorNotification("Memofy Error", status.LastError)
+		if err := SendErrorNotification("Memofy Error", status.LastError); err != nil {
+			log.Printf("Warning: failed to send error notification: %v", err)
+		}
 	}
 
 	// Log detailed status (T085: Status display with all information)
@@ -131,31 +139,41 @@ func (app *StatusBarApp) sendCommand(cmd ipc.Command) {
 // StartRecording sends start command (T073)
 func (app *StatusBarApp) StartRecording() {
 	app.sendCommand(ipc.CmdStart)
-	SendNotification("Memofy", "Command Sent", "Manual recording started")
+	if err := SendNotification("Memofy", "Command Sent", "Manual recording started"); err != nil {
+		log.Printf("Warning: failed to send notification: %v", err)
+	}
 }
 
 // StopRecording sends stop command (T074)
 func (app *StatusBarApp) StopRecording() {
 	app.sendCommand(ipc.CmdStop)
-	SendNotification("Memofy", "Command Sent", "Recording stopped")
+	if err := SendNotification("Memofy", "Command Sent", "Recording stopped"); err != nil {
+		log.Printf("Warning: failed to send notification: %v", err)
+	}
 }
 
 // SetAutoMode sends auto mode command (T075)
 func (app *StatusBarApp) SetAutoMode() {
 	app.sendCommand(ipc.CmdAuto)
-	SendNotification("Memofy", "Mode Changed", "Switched to Auto mode")
+	if err := SendNotification("Memofy", "Mode Changed", "Switched to Auto mode"); err != nil {
+		log.Printf("Warning: failed to send notification: %v", err)
+	}
 }
 
 // SetManualMode sends start command then switches tracking (T076)
 func (app *StatusBarApp) SetManualMode() {
 	app.sendCommand(ipc.CmdStart)
-	SendNotification("Memofy", "Recording Started", "Manual recording started - auto-detection paused")
+	if err := SendNotification("Memofy", "Recording Started", "Manual recording started - auto-detection paused"); err != nil {
+		log.Printf("Warning: failed to send notification: %v", err)
+	}
 }
 
 // SetPauseMode sends pause command (T077)
 func (app *StatusBarApp) SetPauseMode() {
 	app.sendCommand(ipc.CmdPause)
-	SendNotification("Memofy", "Mode Changed", "Monitoring paused")
+	if err := SendNotification("Memofy", "Mode Changed", "Monitoring paused"); err != nil {
+		log.Printf("Warning: failed to send notification: %v", err)
+	}
 }
 
 // OpenRecordingsFolder opens the OBS recordings directory in Finder (T078)
@@ -165,7 +183,9 @@ func (app *StatusBarApp) OpenRecordingsFolder() {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Printf("Failed to get home directory: %v", err)
-		SendNotification("Memofy", "Error", "Could not determine recordings folder location")
+		if notifErr := SendNotification("Memofy", "Error", "Could not determine recordings folder location"); notifErr != nil {
+			log.Printf("Warning: failed to send notification: %v", notifErr)
+		}
 		return
 	}
 	
@@ -173,7 +193,9 @@ func (app *StatusBarApp) OpenRecordingsFolder() {
 	cmd := exec.Command("open", recordingsPath, "-a", "Finder")
 	if err := cmd.Run(); err != nil {
 		log.Printf("Failed to open recordings folder: %v", err)
-		SendNotification("Memofy", "Error", "Could not open recordings folder")
+		if notifErr := SendNotification("Memofy", "Error", "Could not open recordings folder"); notifErr != nil {
+			log.Printf("Warning: failed to send notification: %v", notifErr)
+		}
 	}
 }
 
@@ -182,7 +204,9 @@ func (app *StatusBarApp) OpenLogs() {
 	cmd := exec.Command("open", "/tmp", "-a", "Finder")
 	if err := cmd.Run(); err != nil {
 		log.Printf("Failed to open logs: %v", err)
-		SendNotification("Memofy", "Error", "Could not open logs folder")
+		if notifErr := SendNotification("Memofy", "Error", "Could not open logs folder"); notifErr != nil {
+			log.Printf("Warning: failed to send notification: %v", notifErr)
+		}
 	}
 }
 
@@ -190,7 +214,9 @@ func (app *StatusBarApp) OpenLogs() {
 func (app *StatusBarApp) ShowSettings() {
 	if err := app.settingsWindow.showSimpleSettingsDialog(); err != nil {
 		log.Printf("Failed to show settings: %v", err)
-		SendNotification("Memofy", "Error", "Could not open settings")
+		if notifErr := SendNotification("Memofy", "Error", "Could not open settings"); notifErr != nil {
+			log.Printf("Warning: failed to send notification: %v", notifErr)
+		}
 	}
 }
 
@@ -285,24 +311,32 @@ func (app *StatusBarApp) CheckForUpdates() (bool, string, error) {
 
 // UpdateNow downloads and installs the latest version
 func (app *StatusBarApp) UpdateNow() {
-	SendNotification("Memofy", "Updating...", "Downloading latest version")
+	if err := SendNotification("Memofy", "Updating...", "Downloading latest version"); err != nil {
+		log.Printf("Warning: failed to send notification: %v", err)
+	}
 	log.Println("Starting update...")
 
 	go func() {
 		release, err := app.updateChecker.GetLatestRelease()
 		if err != nil {
 			log.Printf("Failed to get latest release: %v", err)
-			SendErrorNotification("Update Failed", fmt.Sprintf("Could not fetch update: %v", err))
+			if notifErr := SendErrorNotification("Update Failed", fmt.Sprintf("Could not fetch update: %v", err)); notifErr != nil {
+				log.Printf("Warning: failed to send error notification: %v", notifErr)
+			}
 			return
 		}
 
 		if err := app.updateChecker.DownloadAndInstall(release); err != nil {
 			log.Printf("Update failed: %v", err)
-			SendErrorNotification("Update Failed", fmt.Sprintf("Could not install update: %v", err))
+			if notifErr := SendErrorNotification("Update Failed", fmt.Sprintf("Could not install update: %v", err)); notifErr != nil {
+				log.Printf("Warning: failed to send error notification: %v", notifErr)
+			}
 			return
 		}
 
-		SendNotification("Memofy", "Update Complete", "Version "+release.TagName+" installed. Please restart the app.")
+		if err := SendNotification("Memofy", "Update Complete", "Version "+release.TagName+" installed. Please restart the app."); err != nil {
+			log.Printf("Warning: failed to send notification: %v", err)
+		}
 		log.Println("Update completed successfully. Restart required.")
 
 		// Optionally restart the app
