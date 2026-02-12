@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -23,48 +22,48 @@ func TestMenuBarIconStateChanges(t *testing.T) {
 		{
 			name: "idle state",
 			status: &ipc.StatusSnapshot{
-				Mode:           ipc.ModeAuto,
-				TeamsDetected:  false,
-				ZoomDetected:   false,
-				OBSConnected:   false,
-				LastError:      "",
-				Timestamp:      time.Now(),
+				Mode:          ipc.ModeAuto,
+				TeamsDetected: false,
+				ZoomDetected:  false,
+				OBSConnected:  false,
+				LastError:     "",
+				Timestamp:     time.Now(),
 			},
 			expectedChange: true,
 		},
 		{
 			name: "zoom detected",
 			status: &ipc.StatusSnapshot{
-				Mode:           ipc.ModeAuto,
-				TeamsDetected:  false,
-				ZoomDetected:   true,
-				OBSConnected:   false,
-				LastError:      "",
-				Timestamp:      time.Now(),
+				Mode:          ipc.ModeAuto,
+				TeamsDetected: false,
+				ZoomDetected:  true,
+				OBSConnected:  false,
+				LastError:     "",
+				Timestamp:     time.Now(),
 			},
 			expectedChange: true,
 		},
 		{
 			name: "recording active",
 			status: &ipc.StatusSnapshot{
-				Mode:           ipc.ModeAuto,
-				TeamsDetected:  false,
-				ZoomDetected:   true,
-				OBSConnected:   true,
-				LastError:      "",
-				Timestamp:      time.Now(),
+				Mode:          ipc.ModeAuto,
+				TeamsDetected: false,
+				ZoomDetected:  true,
+				OBSConnected:  true,
+				LastError:     "",
+				Timestamp:     time.Now(),
 			},
 			expectedChange: true,
 		},
 		{
 			name: "error state",
 			status: &ipc.StatusSnapshot{
-				Mode:           ipc.ModeAuto,
-				TeamsDetected:  false,
-				ZoomDetected:   false,
-				OBSConnected:   false,
-				LastError:      "Permission denied for screen recording",
-				Timestamp:      time.Now(),
+				Mode:          ipc.ModeAuto,
+				TeamsDetected: false,
+				ZoomDetected:  false,
+				OBSConnected:  false,
+				LastError:     "Permission denied for screen recording",
+				Timestamp:     time.Now(),
 			},
 			expectedChange: true,
 		},
@@ -196,36 +195,36 @@ func TestSettingsSaveValidation(t *testing.T) {
 	settingsWindow := macui.NewSettingsWindow()
 
 	tests := []struct {
-		name             string
-		zoomProcess      string
-		teamsProcess     string
-		startThreshold   int
-		stopThreshold    int
-		shouldSucceed    bool
+		name           string
+		zoomProcess    string
+		teamsProcess   string
+		startThreshold int
+		stopThreshold  int
+		shouldSucceed  bool
 	}{
 		{
-			name:            "valid settings",
-			zoomProcess:     "zoom.us",
-			teamsProcess:    "Microsoft Teams",
-			startThreshold:  3,
-			stopThreshold:   6,
-			shouldSucceed:   true,
+			name:           "valid settings",
+			zoomProcess:    "zoom.us",
+			teamsProcess:   "Microsoft Teams",
+			startThreshold: 3,
+			stopThreshold:  6,
+			shouldSucceed:  true,
 		},
 		{
-			name:            "invalid start threshold",
-			zoomProcess:     "zoom.us",
-			teamsProcess:    "Microsoft Teams",
-			startThreshold:  0,
-			stopThreshold:   6,
-			shouldSucceed:   false,
+			name:           "invalid start threshold",
+			zoomProcess:    "zoom.us",
+			teamsProcess:   "Microsoft Teams",
+			startThreshold: 0,
+			stopThreshold:  6,
+			shouldSucceed:  false,
 		},
 		{
-			name:            "stop < start threshold",
-			zoomProcess:     "zoom.us",
-			teamsProcess:    "Microsoft Teams",
-			startThreshold:  5,
-			stopThreshold:   3,
-			shouldSucceed:   false,
+			name:           "stop < start threshold",
+			zoomProcess:    "zoom.us",
+			teamsProcess:   "Microsoft Teams",
+			startThreshold: 5,
+			stopThreshold:  3,
+			shouldSucceed:  false,
 		},
 	}
 
@@ -251,12 +250,12 @@ func TestErrorNotification(t *testing.T) {
 
 	// Create a status with an error
 	errorStatus := &ipc.StatusSnapshot{
-		Mode:           ipc.ModeAuto,
-		TeamsDetected:  false,
-		ZoomDetected:   false,
-		OBSConnected:   false,
-		LastError:      "Screen recording permission denied. Please enable in Settings.",
-		Timestamp:      time.Now(),
+		Mode:          ipc.ModeAuto,
+		TeamsDetected: false,
+		ZoomDetected:  false,
+		OBSConnected:  false,
+		LastError:     "Screen recording permission denied. Please enable in Settings.",
+		Timestamp:     time.Now(),
 	}
 
 	// Update status - should trigger error notification
@@ -277,12 +276,12 @@ func TestStatusDisplayFormat(t *testing.T) {
 
 	// Initialize with a status
 	status := &ipc.StatusSnapshot{
-		Mode:           ipc.ModeAuto,
-		TeamsDetected:  false,
-		ZoomDetected:   true,
-		OBSConnected:   true,
-		LastError:      "",
-		Timestamp:      time.Now(),
+		Mode:          ipc.ModeAuto,
+		TeamsDetected: false,
+		ZoomDetected:  true,
+		OBSConnected:  true,
+		LastError:     "",
+		Timestamp:     time.Now(),
 	}
 
 	app.UpdateStatus(status)
@@ -309,10 +308,10 @@ func TestMenuItemVisibility(t *testing.T) {
 
 	// Initialize status first
 	status := &ipc.StatusSnapshot{
-		Mode:           ipc.ModeAuto,
-		OBSConnected:   false,
-		LastError:      "",
-		Timestamp:      time.Now(),
+		Mode:         ipc.ModeAuto,
+		OBSConnected: false,
+		LastError:    "",
+		Timestamp:    time.Now(),
 	}
 	app.UpdateStatus(status)
 
