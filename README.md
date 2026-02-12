@@ -51,6 +51,22 @@ See [OBS_AUTO_INITIALIZATION.md](OBS_AUTO_INITIALIZATION.md) for details.
 
 ### 2. Installation
 
+**One-Command Installation** (Recommended):
+```bash
+# Clone and install in one command
+git clone https://github.com/tiroq/memofy.git
+cd memofy
+bash scripts/quick-install.sh
+```
+
+That's it! The script will:
+- ✅ Check and install prerequisites (OBS, Go)
+- ✅ Build or download pre-compiled binaries
+- ✅ Install daemon and menu bar app
+- ✅ Start the menu bar UI
+- ✅ Guide you through OBS setup
+
+**Manual Installation** (if needed):
 ```bash
 # Clone repository
 git clone https://github.com/tiroq/memofy.git
@@ -60,10 +76,17 @@ cd memofy
 make build
 
 # Install (creates LaunchAgent, starts daemon)
-./scripts/install-launchagent.sh
+make install
 
 # Start menu bar UI
 ~/.local/bin/memofy-ui
+```
+
+**Install from Pre-Built Release**:
+```bash
+# Download and install latest release
+cd ~/Downloads
+bash <(curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh)
 ```
 
 ### 3. Usage
@@ -87,6 +110,14 @@ The menu bar application displays meeting status and provides quick controls:
   - **Open Recordings Folder**: Opens OBS output directory
   - **Open Logs**: View daemon logs for debugging
   - **Settings**: Configure detection rules and thresholds
+  - **Check for Updates**: Check if a newer version is available
+  - **Update Now**: Download and install the latest version automatically
+
+**Auto-Update**:
+- Menu bar automatically checks for updates once per hour
+- Click "Update Now" to install the latest version
+- Binary is downloaded and installed automatically
+- Restart app to use the new version
 
 **Settings UI**:
 Click "Settings" in the menu to:
