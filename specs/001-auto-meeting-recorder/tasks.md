@@ -139,20 +139,20 @@ This task breakdown organizes work by user story to enable independent implement
 - [X] T073 [P] [US3] Add menu item: "Start Recording" → writes "start" to cmd.txt
 - [X] T074 [P] [US3] Add menu item: "Stop Recording" → writes "stop" to cmd.txt  
 - [X] T075 [P] [US3] Add menu item: "Auto Mode" with checkmark when mode == auto → writes "auto" to cmd.txt
-- [ ] T076 [P] [US3] Add menu item: "Manual Mode" → writes "start" then switches tracking
+- [X] T076 [P] [US3] Add menu item: "Manual Mode" → writes "start" then switches tracking
 - [X] T077 [P] [US3] Add menu item: "Pause" → writes "pause" to cmd.txt
 - [X] T078 [P] [US3] Add menu item: "Open Recordings Folder" → opens OBS recording directory in Finder
 - [X] T079 [P] [US3] Add menu item: "Open Logs" → opens /tmp/ directory in Finder showing log files
-- [ ] T080 [US3] Implement macOS notification sending using NSUserNotificationCenter in pkg/macui/notifications.go
-- [ ] T081 [US3] Add notification for ERROR state with actionable guidance (deep link to System Preferences)
-- [ ] T082 [US3] Implement Settings window using NSWindow and NSView for detection rules configuration
-- [ ] T083 [US3] Create Settings UI form: text fields for window hints (Teams, Zoom), sliders for thresholds
-- [ ] T084 [US3] Implement Settings Save button: validates and writes to detection-rules.json
-- [ ] T085 [US3] Add status display in menu: show mode, detected app, recording duration, last error
-- [ ] T086 [US3] Test menu bar icon state changes: manually update status.json → icon updates within 500ms
-- [ ] T087 [US3] Test control commands: click "Start Recording" → verify cmd.txt contains "start"
-- [ ] T088 [US3] Test Settings UI: modify window hints → save → verify detection-rules.json updated
-- [ ] T089 [US3] Test error notification: set error in status.json → verify macOS notification appears
+- [X] T080 [US3] Implement macOS notification sending using NSUserNotificationCenter in pkg/macui/notifications.go
+- [X] T081 [US3] Add notification for ERROR state with actionable guidance (deep link to System Preferences)
+- [X] T082 [US3] Implement Settings window using NSWindow and NSView for detection rules configuration
+- [X] T083 [US3] Create Settings UI form: text fields for window hints (Teams, Zoom), sliders for thresholds
+- [X] T084 [US3] Implement Settings Save button: validates and writes to detection-rules.json
+- [X] T085 [US3] Add status display in menu: show mode, detected app, recording duration, last error
+- [X] T086 [US3] Test menu bar icon state changes: manually update status.json → icon updates within 500ms
+- [X] T087 [US3] Test control commands: click "Start Recording" → verify cmd.txt contains "start"
+- [X] T088 [US3] Test Settings UI: modify window hints → save → verify detection-rules.json updated
+- [X] T089 [US3] Test error notification: set error in status.json → verify macOS notification appears
 
 ---
 
