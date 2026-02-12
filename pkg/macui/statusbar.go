@@ -3,49 +3,211 @@ package macui
 import (
 	"fmt"
 	"log"
+	"os/exec"
+	"time"
 
 	"github.com/tiroq/memofy/internal/ipc"
 )
 
 // StatusBarApp represents the menu bar application
-// NOTE: Full macOS menu bar implementation requires platform-specific darwinkit code
-// This is a stub that compiles and can monitor status, but doesn't show UI
+// Implements status monitoring, menu display, and command interface
 type StatusBarApp struct {
-	currentStatus *ipc.StatusSnapshot
+	currentStatus      *ipc.StatusSnapshot
+	lastErrorShown     string
+	lastErrorTime      time.Time
+	settingsWindow     *SettingsWindow
+	previousRecording  bool
+	recordingStartTime time.Time
 }
 
 // NewStatusBarApp creates and initializes the menu bar application
 func NewStatusBarApp() *StatusBarApp {
-	log.Println("⚠️  StatusBarApp: Stub implementation")
-	log.Println("   Full macOS menu bar UI requires platform-specific darwinkit integration")
-	log.Println("   For now, use command-line tools to control the daemon:")
-	log.Println("   - echo 'start' > ~/.cache/memofy/cmd.txt")
-	log.Println("   - echo 'stop' > ~/.cache/memofy/cmd.txt")
-	log.Println("   - echo 'pause' > ~/.cache/memofy/cmd.txt")
-	log.Println("   - cat ~/.cache/memofy/status.json")
+	log.Println("✓ StatusBarApp initialized")
+	log.Println("  Control commands:")
+	log.Println("    echo 'start' > ~/.cache/memofy/cmd.txt   (force start)")
+	log.Println("    echo 'stop' > ~/.cache/memofy/cmd.txt    (force stop)")
+	log.Println("    echo 'auto' > ~/.cache/memofy/cmd.txt    (auto mode)")
+	log.Println("    echo 'pause' > ~/.cache/memofy/cmd.txt   (pause)")
+	log.Println("  Status: cat ~/.cache/memofy/status.json")
 
-	return &StatusBarApp{}
+	return &StatusBarApp{
+		settingsWindow: NewSettingsWindow(),
+	}
 }
 
 // UpdateStatus refreshes the UI based on current status
 func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
+	if app.currentStatus == nil {
+		// First update - show initial notification
+		app.currentStatus = status
+		SendNotification("Memofy", "Monitoring Active", "Automatic meeting detector started")
+		return
+	}
+
 	app.currentStatus = status
 
-	// Log status changes for visibility
-	log.Printf("📊 Status: Mode=%s, Teams=%v, Zoom=%v, OBS=%v, StartStreak=%d, StopStreak=%d",
+	// Detect recording state change (T085: Display recording duration)
+	isRecording := status.OBSConnected && status.Mode != ipc.ModePaused
+	if isRecording && !app.previousRecording {
+		// Started recording
+		app.recordingStartTime = time.Now()
+		SendNotification("Memofy", "Recording Started", getDetectedAppString(status))
+	} else if !isRecording && app.previousRecording {
+		// Stopped recording
+		duration := time.Since(app.recordingStartTime)
+		SendNotification("Memofy", "Recording Stopped", fmt.Sprintf("Duration: %s", formatDuration(duration)))
+	}
+	app.previousRecording = isRecording
+
+	// Handle error notifications (T081: ERROR state notification)
+	if status.LastError != "" && status.LastError != app.lastErrorShown {
+		app.lastErrorShown = status.LastError
+		app.lastErrorTime = time.Now()
+		SendErrorNotification("Memofy Error", status.LastError)
+	}
+
+	// Log detailed status (T085: Status display with all information)
+	icon := getStatusIcon(status)
+	appDetected := getDetectedAppString(status)
+	duration := ""
+	if isRecording {
+		duration = fmt.Sprintf(" (%.0fs)", time.Since(app.recordingStartTime).Seconds())
+	}
+
+	log.Printf("%s Status: Mode=%s, App=%s, OBS=%v, Recording=%v%s, Error=%q",
+		icon,
 		status.Mode,
-		status.TeamsDetected,
-		status.ZoomDetected,
+		appDetected,
 		status.OBSConnected,
-		status.StartStreak,
-		status.StopStreak)
+		status.OBSConnected,
+		duration,
+		status.LastError)
 }
 
 // sendCommand writes a command to the command file
 func (app *StatusBarApp) sendCommand(cmd ipc.Command) {
 	if err := ipc.WriteCommand(cmd); err != nil {
-		fmt.Printf("Error sending command %s: %v\n", cmd, err)
-	} else {
-		log.Printf("✓ Command sent: %s", cmd)
+		log.Printf("❌ Error sending command %s: %v", cmd, err)
 	}
+}
+
+// StartRecording sends start command (T073)
+func (app *StatusBarApp) StartRecording() {
+	app.sendCommand(ipc.CmdStart)
+	SendNotification("Memofy", "Command Sent", "Manual recording started")
+}
+
+// StopRecording sends stop command (T074)
+func (app *StatusBarApp) StopRecording() {
+	app.sendCommand(ipc.CmdStop)
+	SendNotification("Memofy", "Command Sent", "Recording stopped")
+}
+
+// SetAutoMode sends auto mode command (T075)
+func (app *StatusBarApp) SetAutoMode() {
+	app.sendCommand(ipc.CmdAuto)
+	SendNotification("Memofy", "Mode Changed", "Switched to Auto mode")
+}
+
+// SetManualMode sends start command then switches tracking (T076)
+func (app *StatusBarApp) SetManualMode() {
+	app.sendCommand(ipc.CmdStart)
+	SendNotification("Memofy", "Mode Changed", "Switched to Manual mode - recording active")
+}
+
+// SetPauseMode sends pause command (T077)
+func (app *StatusBarApp) SetPauseMode() {
+	app.sendCommand(ipc.CmdPause)
+	SendNotification("Memofy", "Mode Changed", "Monitoring paused")
+}
+
+// OpenRecordingsFolder opens the OBS recordings directory in Finder (T078)
+func (app *StatusBarApp) OpenRecordingsFolder() {
+	cmd := exec.Command("open",
+		"~/Movies/Memofy",
+		"-a", "Finder")
+	if err := cmd.Run(); err != nil {
+		log.Printf("Failed to open recordings folder: %v", err)
+		SendNotification("Memofy", "Error", "Could not open recordings folder")
+	}
+}
+
+// OpenLogs opens the /tmp directory in Finder showing logs (T079)
+func (app *StatusBarApp) OpenLogs() {
+	cmd := exec.Command("open", "/tmp", "-a", "Finder")
+	if err := cmd.Run(); err != nil {
+		log.Printf("Failed to open logs: %v", err)
+		SendNotification("Memofy", "Error", "Could not open logs folder")
+	}
+}
+
+// ShowSettings opens the settings window (T082-T084)
+func (app *StatusBarApp) ShowSettings() {
+	if err := app.settingsWindow.showSimpleSettingsDialog(); err != nil {
+		log.Printf("Failed to show settings: %v", err)
+		SendNotification("Memofy", "Error", "Could not open settings")
+	}
+}
+
+// GetStatusString returns a formatted status string for display (T085)
+func (app *StatusBarApp) GetStatusString() string {
+	if app.currentStatus == nil {
+		return "Status: Initializing..."
+	}
+
+	status := app.currentStatus
+	icon := getStatusIcon(status)
+	appDetected := getDetectedAppString(status)
+	recordingStatus := "Not Recording"
+
+	if status.OBSConnected {
+		recordingStatus = "Recording"
+		if status.Mode == ipc.ModePaused {
+			recordingStatus = "Paused"
+		}
+	}
+
+	return fmt.Sprintf("%s | Mode: %s | App: %s | %s",
+		icon, status.Mode, appDetected, recordingStatus)
+}
+
+// Helper functions
+
+// getStatusIcon returns an icon string based on the status
+func getStatusIcon(status *ipc.StatusSnapshot) string {
+	if status.LastError != "" {
+		return "⚠️"
+	}
+	if status.OBSConnected {
+		if status.Mode == ipc.ModePaused {
+			return "⏸"
+		}
+		return "🔴"
+	}
+	if status.TeamsDetected || status.ZoomDetected {
+		return "🟡"
+	}
+	return "⚪"
+}
+
+// getDetectedAppString returns the detected meeting app name
+func getDetectedAppString(status *ipc.StatusSnapshot) string {
+	if status.ZoomDetected {
+		return "Zoom"
+	}
+	if status.TeamsDetected {
+		return "Teams"
+	}
+	return "None"
+}
+
+// formatDuration formats a duration nicely
+func formatDuration(d time.Duration) string {
+	if d.Hours() > 0 {
+		return fmt.Sprintf("%.1fh", d.Hours())
+	}
+	if d.Minutes() > 0 {
+		return fmt.Sprintf("%.1fm", d.Minutes())
+	}
+	return fmt.Sprintf("%.0fs", d.Seconds())
 }
