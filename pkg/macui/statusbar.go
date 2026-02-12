@@ -43,7 +43,7 @@ func NewStatusBarApp() *StatusBarApp {
 
 	installDir := filepath.Join(os.Getenv("HOME"), ".local", "bin")
 	checker := autoupdate.NewUpdateChecker("tiroq", "memofy", "0.1.0", installDir)
-	
+
 	// Set release channel based on config
 	cfg, err := config.LoadDetectionRules()
 	if err != nil {
@@ -292,4 +292,3 @@ func (app *StatusBarApp) UpdateNow() {
 		// exec.Command("open", "-a", "Memofy").Run()
 	}()
 }
-
