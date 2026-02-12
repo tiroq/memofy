@@ -18,7 +18,7 @@ var statusBarApp *macui.StatusBarApp
 func main() {
 	log.Println("Memofy UI starting...")
 
-	// Create status bar app (stub implementation)
+	// Create status bar app
 	statusBarApp = macui.NewStatusBarApp()
 
 	// Load initial status
@@ -98,6 +98,10 @@ func watchStatusFile() {
 			if !ok {
 				return
 			}
+			log.Printf("Watcher error: %v", err)
+		}
+	}
+}
 			log.Printf("Watcher error: %v", err)
 		}
 	}
