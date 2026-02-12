@@ -75,7 +75,16 @@ func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
 	app.currentStatus = status
 
 	// Detect recording state change (T085: Display recording duration)
-	isRecording := status.OBSConnected && status.Mode != ipc.ModePaused
+	// Check actual recording state from OBS, not just connection status
+	isRecording := false
+	if recordingState, ok := status.RecordingState.(map[string]interface{}); ok {
+		if recording, exists := recordingState["recording"]; exists {
+			if recordingBool, ok := recording.(bool); ok {
+				isRecording = recordingBool
+			}
+		}
+	}
+	
 	if isRecording && !app.previousRecording {
 		// Started recording
 		app.recordingStartTime = time.Now()
@@ -107,7 +116,7 @@ func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
 		status.Mode,
 		appDetected,
 		status.OBSConnected,
-		status.OBSConnected,
+		isRecording,
 		duration,
 		status.LastError)
 }
