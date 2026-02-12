@@ -36,7 +36,9 @@ func newMockOBSServer() *mockOBSServer {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() {
+			_ = conn.Close() // Ignore close errors in test cleanup
+		}()
 
 		mock.handleConnection(conn)
 	}))
@@ -59,7 +61,9 @@ func (m *mockOBSServer) handleConnection(conn *websocket.Conn) {
 			helloData.Authentication.Salt = "testsalt"
 		}
 		hello.D, _ = json.Marshal(helloData)
-		conn.WriteJSON(hello)
+		if err := conn.WriteJSON(hello); err != nil {
+			return
+		}
 	}
 
 	// Wait for Identify
@@ -72,7 +76,9 @@ func (m *mockOBSServer) handleConnection(conn *websocket.Conn) {
 	if m.sendIdentified {
 		identified := Message{Op: OpIdentified}
 		identified.D = json.RawMessage("{}")
-		conn.WriteJSON(identified)
+		if err := conn.WriteJSON(identified); err != nil {
+			return
+		}
 	}
 
 	// Handle requests
@@ -84,7 +90,9 @@ func (m *mockOBSServer) handleConnection(conn *websocket.Conn) {
 
 		if msg.Op == OpRequest {
 			var req Request
-			json.Unmarshal(msg.D, &req)
+			if err := json.Unmarshal(msg.D, &req); err != nil {
+				return
+			}
 			m.handleRequest(conn, &req)
 		}
 	}
@@ -141,7 +149,9 @@ func (m *mockOBSServer) handleRequest(conn *websocket.Conn, req *Request) {
 
 	msg := Message{Op: OpRequestResponse}
 	msg.D, _ = json.Marshal(resp)
-	conn.WriteJSON(msg)
+	if err := conn.WriteJSON(msg); err != nil {
+		return
+	}
 }
 
 func (m *mockOBSServer) URL() string {
@@ -212,7 +222,9 @@ func TestConnect_AlreadyConnected(t *testing.T) {
 	defer mock.Close()
 
 	client := NewClient(mock.URL(), "")
-	client.Connect()
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Initial connect failed: %v", err)
+	}
 
 	err := client.Connect()
 	if err == nil {
@@ -227,7 +239,9 @@ func TestDisconnect(t *testing.T) {
 	defer mock.Close()
 
 	client := NewClient(mock.URL(), "")
-	client.Connect()
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
 
 	if !client.IsConnected() {
 		t.Fatal("client should be connected")
@@ -250,7 +264,9 @@ func TestGetRecordStatus(t *testing.T) {
 	defer mock.Close()
 
 	client := NewClient(mock.URL(), "")
-	client.Connect()
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
 	defer client.Disconnect()
 
 	// Not recording
@@ -280,7 +296,9 @@ func TestStartRecord(t *testing.T) {
 	defer mock.Close()
 
 	client := NewClient(mock.URL(), "")
-	client.Connect()
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
 	defer client.Disconnect()
 
 	err := client.StartRecord("test-meeting.mp4")
@@ -304,7 +322,9 @@ func TestStopRecord(t *testing.T) {
 	defer mock.Close()
 
 	client := NewClient(mock.URL(), "")
-	client.Connect()
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
 	defer client.Disconnect()
 
 	// Start recording first
@@ -333,7 +353,9 @@ func TestGetVersion(t *testing.T) {
 	defer mock.Close()
 
 	client := NewClient(mock.URL(), "")
-	client.Connect()
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
 	defer client.Disconnect()
 
 	obsVersion, wsVersion, err := client.GetVersion()
@@ -355,7 +377,9 @@ func TestReconnection(t *testing.T) {
 
 	client := NewClient(mock.URL(), "")
 	client.reconnectDelay = 100 * time.Millisecond
-	client.Connect()
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Initial connect failed: %v", err)
+	}
 
 	// Simulate disconnection
 	mock.Close()
@@ -392,7 +416,9 @@ func TestEventHandling(t *testing.T) {
 		}
 	})
 
-	client.Connect()
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
 	defer client.Disconnect()
 
 	// TODO: Full event testing would require sending events from mock server
@@ -414,7 +440,9 @@ func TestConnectionStatus(t *testing.T) {
 	}
 
 	// Connected
-	client.Connect()
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
 	if !client.IsConnected() {
 		t.Error("client should be connected after Connect()")
 	}
