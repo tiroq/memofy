@@ -11,8 +11,6 @@ import (
 	"github.com/tiroq/memofy/pkg/macui"
 )
 
-const appName = "Memofy"
-
 var (
 	// Version is set at build time via -ldflags "-X main.Version=..."
 	Version = "dev"
@@ -69,13 +67,19 @@ func watchStatusFile() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer watcher.Close()
+	defer func() {
+		if err := watcher.Close(); err != nil {
+			log.Printf("Failed to close watcher: %v", err)
+		}
+	}()
 
 	statusDir := filepath.Join(os.Getenv("HOME"), ".cache", "memofy")
 	statusPath := filepath.Join(statusDir, "status.json")
 
 	// Ensure directory exists
-	os.MkdirAll(statusDir, 0755)
+	if err := os.MkdirAll(statusDir, 0755); err != nil {
+		log.Printf("Warning: failed to create status directory: %v", err)
+	}
 
 	// Watch the directory (not the file, as it may be recreated)
 	if err := watcher.Add(statusDir); err != nil {
