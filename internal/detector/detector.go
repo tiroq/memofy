@@ -24,20 +24,20 @@ const (
 // RawDetection contains individual signal checks
 type RawDetection struct {
 	ZoomProcessRunning  bool `json:"zoom_process_running"`
-	ZoomHostRunning     bool `json:"zoom_host_running"`      // CptHost process
-	ZoomWindowMatch     bool `json:"zoom_window_match"`      // Window title hint match
+	ZoomHostRunning     bool `json:"zoom_host_running"` // CptHost process
+	ZoomWindowMatch     bool `json:"zoom_window_match"` // Window title hint match
 	TeamsProcessRunning bool `json:"teams_process_running"`
-	TeamsWindowMatch    bool `json:"teams_window_match"`     // Window title hint match
+	TeamsWindowMatch    bool `json:"teams_window_match"` // Window title hint match
 }
 
 // DetectionState represents current meeting detection evaluation
 type DetectionState struct {
-	MeetingDetected bool            `json:"meeting_detected"`    // Stable detection result
-	DetectedApp     DetectedApp     `json:"detected_app"`        // Which app triggered
-	WindowTitle     string          `json:"window_title"`        // Active window title for filename
-	RawDetections   RawDetection    `json:"raw_detections"`      // Individual signal checks
-	ConfidenceLevel ConfidenceLevel `json:"confidence"`          // Detection confidence
-	EvaluatedAt     time.Time       `json:"evaluated_at"`        // When evaluated
+	MeetingDetected bool            `json:"meeting_detected"` // Stable detection result
+	DetectedApp     DetectedApp     `json:"detected_app"`     // Which app triggered
+	WindowTitle     string          `json:"window_title"`     // Active window title for filename
+	RawDetections   RawDetection    `json:"raw_detections"`   // Individual signal checks
+	ConfidenceLevel ConfidenceLevel `json:"confidence"`       // Detection confidence
+	EvaluatedAt     time.Time       `json:"evaluated_at"`     // When evaluated
 }
 
 // Detector interface for meeting detection
