@@ -103,7 +103,3 @@ func watchStatusFile() {
 		}
 	}
 }
-			log.Printf("Watcher error: %v", err)
-		}
-	}
-}
