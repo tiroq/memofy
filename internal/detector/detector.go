@@ -6,9 +6,10 @@ import "time"
 type DetectedApp string
 
 const (
-	AppNone  DetectedApp = ""
-	AppZoom  DetectedApp = "zoom"
-	AppTeams DetectedApp = "teams"
+	AppNone       DetectedApp = ""
+	AppZoom       DetectedApp = "zoom"
+	AppTeams      DetectedApp = "teams"
+	AppGoogleMeet DetectedApp = "google_meet"
 )
 
 // ConfidenceLevel represents detection confidence
@@ -23,11 +24,13 @@ const (
 
 // RawDetection contains individual signal checks
 type RawDetection struct {
-	ZoomProcessRunning  bool `json:"zoom_process_running"`
-	ZoomHostRunning     bool `json:"zoom_host_running"` // CptHost process
-	ZoomWindowMatch     bool `json:"zoom_window_match"` // Window title hint match
-	TeamsProcessRunning bool `json:"teams_process_running"`
-	TeamsWindowMatch    bool `json:"teams_window_match"` // Window title hint match
+	ZoomProcessRunning    bool `json:"zoom_process_running"`
+	ZoomHostRunning       bool `json:"zoom_host_running"` // CptHost process
+	ZoomWindowMatch       bool `json:"zoom_window_match"` // Window title hint match
+	TeamsProcessRunning   bool `json:"teams_process_running"`
+	TeamsWindowMatch      bool `json:"teams_window_match"`       // Window title hint match
+	GoogleMeetRunning     bool `json:"google_meet_running"`      // Browser or app running
+	GoogleMeetWindowMatch bool `json:"google_meet_window_match"` // Window title hint match
 }
 
 // DetectionState represents current meeting detection evaluation
