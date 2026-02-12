@@ -102,11 +102,14 @@ func (c *Client) CheckAndCreateAudioSource(sceneName string) (string, error) {
 
 	// No audio source found, create one
 	// macOS uses coreaudio_input_capture for system audio
-	audioSourceType := "coreaudio_input_capture"
-	if runtime.GOOS == "windows" {
+	var audioSourceType string
+	switch runtime.GOOS {
+	case "windows":
 		audioSourceType = "wasapi_input_capture"
-	} else if runtime.GOOS == "linux" {
+	case "linux":
 		audioSourceType = "pulse_input_capture"
+	default: // darwin/macOS
+		audioSourceType = "coreaudio_input_capture"
 	}
 
 	audioSourceName := "Desktop Audio"
@@ -144,11 +147,14 @@ func (c *Client) CheckAndCreateDisplaySource(sceneName string) (string, error) {
 	}
 
 	// No display source found, create one
-	displaySourceType := "macos_screen_capture"
-	if runtime.GOOS == "windows" {
+	var displaySourceType string
+	switch runtime.GOOS {
+	case "windows":
 		displaySourceType = "monitor_capture"
-	} else if runtime.GOOS == "linux" {
+	case "linux":
 		displaySourceType = "xshm_input"
+	default: // darwin/macOS
+		displaySourceType = "macos_screen_capture"
 	}
 
 	displaySourceName := "Display Capture"
