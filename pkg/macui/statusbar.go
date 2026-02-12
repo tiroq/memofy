@@ -198,6 +198,11 @@ func getDetectedAppString(status *ipc.StatusSnapshot) string {
 	if status.TeamsDetected {
 		return "Teams"
 	}
+	if status.GoogleMeetActive {
+		return "Google Meet"
+	}
+	return "None"
+}
 	return "None"
 }
 
