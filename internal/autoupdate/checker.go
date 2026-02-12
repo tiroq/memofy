@@ -1,0 +1,339 @@
+package autoupdate
+
+import (
+	"archive/zip"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+// Release represents a GitHub release
+type Release struct {
+	TagName    string    `json:"tag_name"`
+	Name       string    `json:"name"`
+	Body       string    `json:"body"`
+	Published  time.Time `json:"published_at"`
+	Assets     []Asset   `json:"assets"`
+	Prerelease bool      `json:"prerelease"`
+	Draft      bool      `json:"draft"`
+}
+
+// Asset represents a release asset (binary)
+type Asset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+	Size               int64  `json:"size"`
+}
+
+// UpdateChecker handles version checking and updates
+type UpdateChecker struct {
+	repoOwner      string
+	repoName       string
+	currentVersion string
+	apiURL         string
+	installDir     string
+}
+
+// NewUpdateChecker creates a new update checker
+func NewUpdateChecker(owner, repo, currentVersion, installDir string) *UpdateChecker {
+	return &UpdateChecker{
+		repoOwner:      owner,
+		repoName:       repo,
+		currentVersion: currentVersion,
+		apiURL:         fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, repo),
+		installDir:     installDir,
+	}
+}
+
+// GetLatestRelease fetches the latest release from GitHub
+func (uc *UpdateChecker) GetLatestRelease() (*Release, error) {
+	url := fmt.Sprintf("%s/releases/latest", uc.apiURL)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch release: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github API returned status %d", resp.StatusCode)
+	}
+
+	var release Release
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return nil, fmt.Errorf("failed to parse release: %w", err)
+	}
+
+	return &release, nil
+}
+
+// IsUpdateAvailable checks if a newer version is available
+func (uc *UpdateChecker) IsUpdateAvailable() (bool, *Release, error) {
+	release, err := uc.GetLatestRelease()
+	if err != nil {
+		return false, nil, err
+	}
+
+	// Compare versions (simple semantic version comparison)
+	// Convert "v0.2.0" to "0.2.0" for comparison
+	latestVer := strings.TrimPrefix(release.TagName, "v")
+	currentVer := strings.TrimPrefix(uc.currentVersion, "v")
+
+	if isNewer(latestVer, currentVer) {
+		return true, release, nil
+	}
+
+	return false, nil, nil
+}
+
+// DownloadAndInstall downloads and installs the latest release
+func (uc *UpdateChecker) DownloadAndInstall(release *Release) error {
+	// Find the appropriate binary for this platform
+	asset := uc.findBinaryAsset(release)
+	if asset == nil {
+		return fmt.Errorf("no compatible binary found for this platform")
+	}
+
+	// Download the binary
+	tempFile, err := uc.downloadAsset(asset)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tempFile)
+
+	// Extract and install binaries
+	if err := uc.installFromArchive(tempFile, asset.Name); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// findBinaryAsset finds the appropriate binary for the current platform
+func (uc *UpdateChecker) findBinaryAsset(release *Release) *Asset {
+	// Determine platform and architecture
+	osName := "darwin" // macOS
+	arch := "arm64"    // Apple Silicon (most common)
+
+	// Check if running on Intel Mac
+	if isIntelMac() {
+		arch = "amd64"
+	}
+
+	// Look for matching binary
+	pattern := fmt.Sprintf("memofy-%s-%s.zip", osName, arch)
+
+	for _, asset := range release.Assets {
+		if strings.Contains(asset.Name, pattern) {
+			return &asset
+		}
+	}
+
+	// Fallback to generic darwin binary
+	for _, asset := range release.Assets {
+		if strings.Contains(asset.Name, "darwin") {
+			return &asset
+		}
+	}
+
+	return nil
+}
+
+// downloadAsset downloads a release asset
+func (uc *UpdateChecker) downloadAsset(asset *Asset) (string, error) {
+	tempFile := filepath.Join(os.TempDir(), asset.Name)
+
+	resp, err := http.Get(asset.BrowserDownloadURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to download: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download failed with status %d", resp.StatusCode)
+	}
+
+	file, err := os.Create(tempFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer file.Close()
+
+	// Download with progress tracking (optional)
+	if _, err := io.Copy(file, resp.Body); err != nil {
+		return "", fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return tempFile, nil
+}
+
+// installFromArchive extracts and installs binaries from archive
+func (uc *UpdateChecker) installFromArchive(archivePath, archiveName string) error {
+	// Determine if it's a zip or tar.gz
+	if strings.HasSuffix(archiveName, ".zip") {
+		return uc.installFromZip(archivePath)
+	}
+
+	// Could add tar.gz support here for Linux/other platforms
+	return fmt.Errorf("unsupported archive format: %s", archiveName)
+}
+
+// installFromZip extracts and installs from a zip file
+func (uc *UpdateChecker) installFromZip(zipPath string) error {
+	reader, err := zip.NewReader(os.Open(zipPath))
+	if err != nil {
+		return fmt.Errorf("failed to open zip: %w", err)
+	}
+
+	tempDir := filepath.Join(os.TempDir(), "memofy-update")
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
+		return fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Extract files
+	if err := reader.Close(); err != nil {
+		return fmt.Errorf("failed to close zip reader: %w", err)
+	}
+
+	// Reopen for extraction
+	file, err := os.Open(zipPath)
+	if err != nil {
+		return fmt.Errorf("failed to reopen zip: %w", err)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat zip: %w", err)
+	}
+
+	zr, err := zip.NewReader(file, info.Size())
+	if err != nil {
+		return fmt.Errorf("failed to create zip reader: %w", err)
+	}
+
+	// Extract all files
+	for _, f := range zr.File {
+		fpath := filepath.Join(tempDir, f.Name)
+
+		if f.FileInfo().IsDir() {
+			os.MkdirAll(fpath, os.ModePerm)
+			continue
+		}
+
+		// Create parent directory
+		os.MkdirAll(filepath.Dir(fpath), os.ModePerm)
+
+		// Extract file
+		rc, err := f.Open()
+		if err != nil {
+			return fmt.Errorf("failed to open file in zip: %w", err)
+		}
+
+		outFile, err := os.Create(fpath)
+		if err != nil {
+			rc.Close()
+			return fmt.Errorf("failed to create extracted file: %w", err)
+		}
+
+		_, err = io.Copy(outFile, rc)
+		outFile.Close()
+		rc.Close()
+
+		if err != nil {
+			return fmt.Errorf("failed to extract file: %w", err)
+		}
+	}
+
+	// Install binaries
+	if err := uc.installBinaries(tempDir); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// installBinaries copies binaries to install directory
+func (uc *UpdateChecker) installBinaries(sourceDir string) error {
+	binaries := []string{"memofy-core", "memofy-ui"}
+
+	for _, binary := range binaries {
+		// Find the binary in the extracted directory
+		var sourcePath string
+		err := filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() && strings.Contains(info.Name(), binary) {
+				sourcePath = path
+				return filepath.SkipDir
+			}
+			return nil
+		})
+
+		if err != nil || sourcePath == "" {
+			return fmt.Errorf("binary %s not found in archive", binary)
+		}
+
+		// Copy to install directory
+		destPath := filepath.Join(uc.installDir, binary)
+		if err := copyFile(sourcePath, destPath); err != nil {
+			return fmt.Errorf("failed to install %s: %w", binary, err)
+		}
+
+		// Make executable
+		os.Chmod(destPath, 0755)
+	}
+
+	return nil
+}
+
+// copyFile copies a file
+func copyFile(src, dst string) error {
+	source, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	destination, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destination.Close()
+
+	_, err = io.Copy(destination, source)
+	return err
+}
+
+// isNewer checks if version1 > version2 (simple comparison)
+func isNewer(version1, version2 string) bool {
+	parts1 := strings.Split(version1, ".")
+	parts2 := strings.Split(version2, ".")
+
+	for i := 0; i < len(parts1) && i < len(parts2); i++ {
+		var v1, v2 int
+		fmt.Sscanf(parts1[i], "%d", &v1)
+		fmt.Sscanf(parts2[i], "%d", &v2)
+
+		if v1 > v2 {
+			return true
+		}
+		if v1 < v2 {
+			return false
+		}
+	}
+
+	return len(parts1) > len(parts2)
+}
+
+// isIntelMac checks if running on Intel Mac
+func isIntelMac() bool {
+	// This is a simplified check - in production, you'd use more robust method
+	// For now, assume Apple Silicon (arm64) as default
+	return false
+}
