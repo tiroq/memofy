@@ -7,11 +7,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/progrium/darwinkit/macos/appkit"
-	"github.com/progrium/darwinkit/macos/foundation"
-	"github.com/tiroq/memofy/internal/detector"
 	"github.com/tiroq/memofy/internal/ipc"
-	"github.com/tiroq/memofy/internal/obsws"
 	"github.com/tiroq/memofy/pkg/macui"
 )
 
@@ -20,25 +16,18 @@ const appName = "Memofy"
 var statusBarApp *macui.StatusBarApp
 
 func main() {
-	// Initialize macOS application
-	app := appkit.App_WithDidLaunch(func(notification foundation.Notification) {
-		// Create status bar app
-		statusBarApp = macui.NewStatusBarApp()
+	log.Println("Memofy UI starting...")
 
-		// Load initial status
-		if err := updateStatus(); err != nil {
-			log.Printf("Failed to load initial status: %v", err)
-		}
+	// Create status bar app (stub implementation)
+	statusBarApp = macui.NewStatusBarApp()
 
-		// Start watching status file
-		go watchStatusFile()
+	// Load initial status
+	if err := updateStatus(); err != nil {
+		log.Printf("Failed to load initial status: %v", err)
+	}
 
-		// Keep app running
-		appkit.App().ActivateIgnoringOtherApps(true)
-	})
-
-	app.SetActivationPolicy(appkit.ApplicationActivationPolicyAccessory)
-	app.Run()
+	// Start watching status file
+	watchStatusFile()
 }
 
 // updateStatus reads status.json and updates UI
@@ -48,18 +37,15 @@ func updateStatus() error {
 		// If status file doesn't exist yet, use default
 		if os.IsNotExist(err) {
 			defaultStatus := &ipc.StatusSnapshot{
-				Mode: ipc.ModeAuto,
-				DetectionState: detector.DetectionState{
-					MeetingDetected: false,
-					DetectedApp:     detector.AppNone,
-					EvaluatedAt:     time.Now(),
-				},
-				RecordingState: obsws.RecordingState{
-					Recording:   false,
-					OBSStatus:   "disconnected",
-					LastUpdated: time.Now(),
-				},
-				LastUpdated: time.Now(),
+				Mode:          ipc.ModeAuto,
+				TeamsDetected: false,
+				ZoomDetected:  false,
+				StartStreak:   0,
+				StopStreak:    0,
+				LastAction:    "initialized",
+				LastError:     "",
+				Timestamp:     time.Now(),
+				OBSConnected:  false,
 			}
 			statusBarApp.UpdateStatus(defaultStatus)
 			return nil
