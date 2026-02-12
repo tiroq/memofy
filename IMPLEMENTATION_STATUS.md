@@ -5,7 +5,7 @@
 
 ## Summary
 
-Memofy is **feature-complete for automatic meeting detection and recording**. The daemon is production-ready with comprehensive logging, file-based control, and OBS integration. The menu bar UI now provides native macOS notifications, settings management, and full control functionality using AppleScript for maximum compatibility.
+Memofy is **feature-complete for automatic meeting detection and recording**. The daemon is production-ready with comprehensive logging, file-based control, and OBS integration. The menu bar UI provides native macOS notifications, settings management, and full control functionality. Support for Google Meet has been added via browser detection.
 
 ## Completion Status: 95/105 tasks (90%)
 
@@ -33,6 +33,7 @@ Memofy is **feature-complete for automatic meeting detection and recording**. Th
 - [X] Detector interface
 - [X] ZoomDetector (process + CptHost + window title detection)
 - [X] TeamsDetector (process + window title detection)
+- [X] GoogleMeetDetector (browser + window title detection) ⭐ NEW
 - [X] macOS process detection (NSWorkspace.runningApplications)
 - [X] Window title detection (Accessibility APIs)
 - [X] Multi-detector aggregation
@@ -101,7 +102,7 @@ Memofy is **feature-complete for automatic meeting detection and recording**. Th
 ## What Works Now
 
 ### ✅ Core Functionality (Production-Ready)
-1. **Automatic Detection**: Detects Zoom/Teams meetings with configurable rules
+1. **Automatic Detection**: Detects Zoom, Microsoft Teams, and Google Meet meetings with configurable rules
 2. **State Machine**: Anti-flap debounce (3 detections to start, 6 to stop)
 3. **OBS Control**: WebSocket integration with reconnection logic
 4. **File-Based IPC**: Status monitoring and command interface
