@@ -17,6 +17,8 @@ Memofy is a macOS menu bar application that automatically detects and records Zo
 - **File-based IPC**: Daemon and UI communicate via status/command files
 - **Auto-start**: LaunchAgent ensures daemon runs at login
 - **Comprehensive Logging**: Detailed logs with 10MB rotation for troubleshooting
+- **Automated Releases**: GitHub Actions CI/CD pipeline with automatic multi-platform builds
+- **Self-Updating**: One-click updates from menu bar with release channel preferences
 
 ## System Requirements
 
@@ -72,15 +74,20 @@ That's it! The script will:
 git clone https://github.com/tiroq/memofy.git
 cd memofy
 
-# Build binaries
-make build
+# Using Task (recommended)
+task build
+task install
 
-# Install (creates LaunchAgent, starts daemon)
+# Or using Make
+make build
 make install
 
 # Start menu bar UI
 ~/.local/bin/memofy-ui
 ```
+
+**Note**: This project supports both [Task](https://taskfile.dev/) (recommended) and Make. 
+See [Taskfile Guide](docs/TASKFILE_GUIDE.md) for Task usage.
 
 **Install from Pre-Built Release**:
 ```bash
@@ -115,9 +122,17 @@ The menu bar application displays meeting status and provides quick controls:
 
 **Auto-Update**:
 - Menu bar automatically checks for updates once per hour
-- Click "Update Now" to install the latest version
-- Binary is downloaded and installed automatically
-- Restart app to use the new version
+- Desktop notification appears when new version is available
+- Click "Update Now" to install the latest version automatically
+- Binary is downloaded from GitHub Releases and installed
+- Configuration-based release channel (stable or pre-release)
+- See [Release Channel Configuration](docs/RELEASE_CHANNEL_CONFIGURATION.md) for details
+
+**Release Channels**:
+- **Stable** (default): Only stable releases (v0.2.0, v0.3.0)
+- **Pre-release**: Includes beta and RC versions (v0.2.0-rc1)
+- Configure via `~/.config/memofy/detection-rules.json` (`allow_dev_updates` flag)
+- See [Quick Reference](docs/RELEASE_UPDATE_QUICK_REFERENCE.md) for usage
 
 **Settings UI**:
 Click "Settings" in the menu to:
@@ -306,15 +321,46 @@ tail -f /tmp/memofy-core.err.log
 
 ## Development
 
+### Prerequisites
+
+- Go 1.21+
+- [Task](https://taskfile.dev/) (recommended) or Make
+- OBS Studio 28.0+
+
 ### Building
 
+With Task (recommended):
+```bash
+# Build both binaries
+task build
+
+# Build individual components
+task build-core
+task build-ui
+
+# Install locally
+task install
+
+# Run tests
+task test
+
+# Run linter
+task lint
+
+# Generate test coverage
+task test-coverage
+
+# Clean build artifacts
+task clean
+
+# List all available tasks
+task --list
+```
+
+Or with Make:
 ```bash
 # Build both binaries
 make build
-
-# Build individual components
-make build-core
-make build-ui
 
 # Run tests
 make test
@@ -323,10 +369,16 @@ make test
 make clean
 ```
 
+See [Taskfile Guide](docs/TASKFILE_GUIDE.md) for complete Task usage documentation.
+
 ### Project Structure
 
 ```
 memofy/
+├── .github/
+│   └── workflows/      # GitHub Actions CI/CD
+│       ├── release.yml # Automated releases
+│       └── ci.yml      # Testing pipeline
 ├── cmd/
 │   ├── memofy-core/    # Daemon main
 │   └── memofy-ui/      # Menu bar UI main
@@ -335,15 +387,25 @@ memofy/
 │   ├── statemachine/   # Debounce state machine
 │   ├── obsws/          # OBS WebSocket client
 │   ├── ipc/            # Status/command file handlers
-│   └── config/         # Configuration loading
+│   ├── config/         # Configuration loading
+│   └── autoupdate/     # Auto-update system
 ├── pkg/
 │   └── macui/          # macOS menu bar UI components
 ├── scripts/
 │   ├── com.memofy.core.plist   # LaunchAgent plist
 │   ├── install-launchagent.sh  # Installation script
+│   ├── quick-install.sh        # One-command installer
+│   ├── build-release.sh        # Local release builder
 │   └── uninstall.sh            # Uninstallation script
 ├── configs/
 │   └── default-detection-rules.json
+├── docs/
+│   ├── RELEASE_CHANNEL_CONFIGURATION.md # Release channel guide
+│   ├── RELEASE_PROCESS_GUIDE.md         # Maintainer guide
+│   ├── AUTO_UPDATE_SYSTEM.md            # Update system details
+│   ├── RELEASE_UPDATE_QUICK_REFERENCE.md # Quick reference
+│   └── TASKFILE_GUIDE.md                # Task usage guide
+├── Taskfile.yml        # Task runner configuration (recommended)
 ├── Makefile
 └── README.md
 ```
@@ -369,6 +431,25 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [OBS Studio](https://obsproject.com/) - Recording software
 - [obs-websocket](https://github.com/obsproject/obs-websocket) - OBS remote control
 - [progrium/darwinkit](https://github.com/progrium/darwinkit) - macOS Go bindings
+
+## Documentation
+
+- **User Guides**:
+  - [Installation Guide](INSTALLATION_GUIDE.md) - Comprehensive installation instructions
+  - [Release Channel Configuration](docs/RELEASE_CHANNEL_CONFIGURATION.md) - Configure stable vs pre-release updates
+  - [Quick Reference](docs/RELEASE_UPDATE_QUICK_REFERENCE.md) - Common commands and workflows
+
+- **Developer Guides**:
+  - [Taskfile Guide](docs/TASKFILE_GUIDE.md) - Task runner usage (recommended build tool)
+  - [OBS Auto-Initialization](OBS_AUTO_INITIALIZATION.md) - Automatic OBS setup
+  - [Quick Install Implementation](QUICK_INSTALL_IMPLEMENTATION.md) - Installation script details
+
+- **Technical Documentation**:
+  - [Auto-Update System](docs/AUTO_UPDATE_SYSTEM.md) - Update system architecture
+
+- **Maintainer Guides**:
+  - [Release Process Guide](docs/RELEASE_PROCESS_GUIDE.md) - How to publish releases
+  - [Release Channel Implementation](docs/RELEASE_CHANNEL_IMPLEMENTATION.md) - Technical implementation details
 
 ## Future Enhancements
 
