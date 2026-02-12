@@ -69,8 +69,8 @@ func TestGetSceneSourcesParseResponse(t *testing.T) {
 
 func TestRequiredSourcesDetection(t *testing.T) {
 	tests := []struct {
-		name     string
-		sources  []SourceInfo
+		name      string
+		sources   []SourceInfo
 		wantAudio bool
 		wantVideo bool
 	}{
@@ -154,9 +154,9 @@ func TestRequiredSourcesDetection(t *testing.T) {
 func TestSourceTypePlatformSelection(t *testing.T) {
 	// Test that correct source types are selected per platform
 	tests := []struct {
-		platform       string
-		wantAudioType  string
-		wantVideoType  string
+		platform      string
+		wantAudioType string
+		wantVideoType string
 	}{
 		{
 			platform:      "darwin",
