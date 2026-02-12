@@ -37,15 +37,16 @@ func updateStatus() error {
 		// If status file doesn't exist yet, use default
 		if os.IsNotExist(err) {
 			defaultStatus := &ipc.StatusSnapshot{
-				Mode:          ipc.ModeAuto,
-				TeamsDetected: false,
-				ZoomDetected:  false,
-				StartStreak:   0,
-				StopStreak:    0,
-				LastAction:    "initialized",
-				LastError:     "",
-				Timestamp:     time.Now(),
-				OBSConnected:  false,
+				Mode:             ipc.ModeAuto,
+				TeamsDetected:    false,
+				ZoomDetected:     false,
+				GoogleMeetActive: false,
+				StartStreak:      0,
+				StopStreak:       0,
+				LastAction:       "initialized",
+				LastError:        "",
+				Timestamp:        time.Now(),
+				OBSConnected:     false,
 			}
 			statusBarApp.UpdateStatus(defaultStatus)
 			return nil
