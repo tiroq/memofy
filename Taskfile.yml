@@ -31,7 +31,7 @@ tasks:
       - build/{{.BINARY_CORE}}
     cmds:
       - mkdir -p build
-      - go build -ldflags "-X main.version={{.VERSION}}" -o build/{{.BINARY_CORE}} ./cmd/memofy-core
+      - go build -ldflags "-X main.Version={{.VERSION}}" -o build/{{.BINARY_CORE}} ./cmd/memofy-core
 
   build-ui:
     desc: Build the menu bar UI binary
@@ -43,7 +43,7 @@ tasks:
       - build/{{.BINARY_UI}}
     cmds:
       - mkdir -p build
-      - go build -ldflags "-X main.version={{.VERSION}}" -o build/{{.BINARY_UI}} ./cmd/memofy-ui
+      - go build -ldflags "-X main.Version={{.VERSION}}" -o build/{{.BINARY_UI}} ./cmd/memofy-ui
 
   install:
     desc: Install binaries and LaunchAgent

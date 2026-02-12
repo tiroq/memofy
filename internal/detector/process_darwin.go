@@ -1,3 +1,5 @@
+//go:build darwin
+
 package detector
 
 import (
@@ -19,6 +21,7 @@ func NewProcessDetection() *ProcessDetection {
 }
 
 // IsProcessRunning checks if any running app matches the given process patterns
+// Matches against both bundle IDs and localized names
 func (pd *ProcessDetection) IsProcessRunning(processPatterns []string) (bool, string) {
 	apps := pd.workspace.RunningApplications()
 
@@ -29,14 +32,20 @@ func (pd *ProcessDetection) IsProcessRunning(processPatterns []string) (bool, st
 		}
 
 		bundleID := app.BundleIdentifier()
-		if bundleID == "" {
-			continue
-		}
+		localizedName := app.LocalizedName()
 
-		// Check if bundle ID matches any pattern
+		// Check if bundle ID or localized name matches any pattern
 		for _, pattern := range processPatterns {
-			if strings.Contains(strings.ToLower(bundleID), strings.ToLower(pattern)) {
+			patternLower := strings.ToLower(pattern)
+			
+			// Check bundle ID
+			if bundleID != "" && strings.Contains(strings.ToLower(bundleID), patternLower) {
 				return true, bundleID
+			}
+			
+			// Check localized name
+			if localizedName != "" && strings.Contains(strings.ToLower(localizedName), patternLower) {
+				return true, localizedName
 			}
 		}
 	}
@@ -44,7 +53,9 @@ func (pd *ProcessDetection) IsProcessRunning(processPatterns []string) (bool, st
 	return false, ""
 }
 
-// GetActiveWindowTitle returns the title of the frontmost application's window
+// GetActiveWindowTitle returns the localized name of the frontmost application
+// Note: This returns the application name, not the actual window title.
+// macOS accessibility APIs would be needed for true window titles.
 func (pd *ProcessDetection) GetActiveWindowTitle() (string, error) {
 	// Get frontmost app
 	frontApp := pd.workspace.FrontmostApplication()
@@ -60,21 +71,22 @@ func (pd *ProcessDetection) GetActiveWindowTitle() (string, error) {
 	return localizedName, nil
 }
 
-// WindowMatches checks if any window title contains the given hints
-// Returns true if any hint is found in the window title
+// WindowMatches checks if the frontmost application name contains any of the given hints
+// Note: This checks the application name, not the actual window title.
+// Returns true if any hint is found in the application name
 func (pd *ProcessDetection) WindowMatches(windowHints []string) (bool, string) {
-	windowTitle, err := pd.GetActiveWindowTitle()
-	if err != nil || windowTitle == "" {
+	appName, err := pd.GetActiveWindowTitle()
+	if err != nil || appName == "" {
 		return false, ""
 	}
 
-	windowTitleLower := strings.ToLower(windowTitle)
+	appNameLower := strings.ToLower(appName)
 
 	for _, hint := range windowHints {
-		if strings.Contains(windowTitleLower, strings.ToLower(hint)) {
-			return true, windowTitle
+		if strings.Contains(appNameLower, strings.ToLower(hint)) {
+			return true, appName
 		}
 	}
 
-	return false, windowTitle
+	return false, appName
 }

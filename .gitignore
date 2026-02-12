@@ -38,5 +38,9 @@ go.work.sum
 
 # Memofy-specific
 bin/
+build/
+dist/
 .cache/
 *.log
+memofy-core
+memofy-ui

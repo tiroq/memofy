@@ -75,7 +75,16 @@ func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
 	app.currentStatus = status
 
 	// Detect recording state change (T085: Display recording duration)
-	isRecording := status.OBSConnected && status.Mode != ipc.ModePaused
+	// Check actual recording state from OBS, not just connection status
+	isRecording := false
+	if recordingState, ok := status.RecordingState.(map[string]interface{}); ok {
+		if recording, exists := recordingState["recording"]; exists {
+			if recordingBool, ok := recording.(bool); ok {
+				isRecording = recordingBool
+			}
+		}
+	}
+	
 	if isRecording && !app.previousRecording {
 		// Started recording
 		app.recordingStartTime = time.Now()
@@ -107,7 +116,7 @@ func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
 		status.Mode,
 		appDetected,
 		status.OBSConnected,
-		status.OBSConnected,
+		isRecording,
 		duration,
 		status.LastError)
 }
@@ -140,7 +149,7 @@ func (app *StatusBarApp) SetAutoMode() {
 // SetManualMode sends start command then switches tracking (T076)
 func (app *StatusBarApp) SetManualMode() {
 	app.sendCommand(ipc.CmdStart)
-	SendNotification("Memofy", "Mode Changed", "Switched to Manual mode - recording active")
+	SendNotification("Memofy", "Recording Started", "Manual recording started - auto-detection paused")
 }
 
 // SetPauseMode sends pause command (T077)
@@ -150,10 +159,18 @@ func (app *StatusBarApp) SetPauseMode() {
 }
 
 // OpenRecordingsFolder opens the OBS recordings directory in Finder (T078)
+// Assumes recordings are saved to ~/Movies/Memofy (OBS default recording path)
+// TODO: Read actual recording path from OBS configuration if different
 func (app *StatusBarApp) OpenRecordingsFolder() {
-	cmd := exec.Command("open",
-		"~/Movies/Memofy",
-		"-a", "Finder")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Printf("Failed to get home directory: %v", err)
+		SendNotification("Memofy", "Error", "Could not determine recordings folder location")
+		return
+	}
+	
+	recordingsPath := filepath.Join(homeDir, "Movies", "Memofy")
+	cmd := exec.Command("open", recordingsPath, "-a", "Finder")
 	if err := cmd.Run(); err != nil {
 		log.Printf("Failed to open recordings folder: %v", err)
 		SendNotification("Memofy", "Error", "Could not open recordings folder")

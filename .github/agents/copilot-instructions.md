@@ -9,7 +9,9 @@ Auto-generated from all feature plans. Last updated: 2026-02-12
 ## Project Structure
 
 ```text
-src/
+cmd/
+internal/
+pkg/
 tests/
 ```
 
