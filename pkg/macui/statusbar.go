@@ -3,21 +3,26 @@ package macui
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
+	"github.com/tiroq/memofy/internal/autoupdate"
 	"github.com/tiroq/memofy/internal/ipc"
 )
 
 // StatusBarApp represents the menu bar application
 // Implements status monitoring, menu display, and command interface
 type StatusBarApp struct {
-	currentStatus      *ipc.StatusSnapshot
-	lastErrorShown     string
-	lastErrorTime      time.Time
-	settingsWindow     *SettingsWindow
-	previousRecording  bool
-	recordingStartTime time.Time
+	currentStatus       *ipc.StatusSnapshot
+	lastErrorShown      string
+	lastErrorTime       time.Time
+	settingsWindow      *SettingsWindow
+	previousRecording   bool
+	recordingStartTime  time.Time
+	updateChecker       *autoupdate.UpdateChecker
+	lastUpdateCheckTime time.Time
 }
 
 // NewStatusBarApp creates and initializes the menu bar application
@@ -30,8 +35,10 @@ func NewStatusBarApp() *StatusBarApp {
 	log.Println("    echo 'pause' > ~/.cache/memofy/cmd.txt   (pause)")
 	log.Println("  Status: cat ~/.cache/memofy/status.json")
 
+	installDir := filepath.Join(os.Getenv("HOME"), ".local", "bin")
 	return &StatusBarApp{
 		settingsWindow: NewSettingsWindow(),
+		updateChecker:  autoupdate.NewUpdateChecker("tiroq", "memofy", "0.1.0", installDir),
 	}
 }
 
@@ -216,3 +223,54 @@ func formatDuration(d time.Duration) string {
 	}
 	return fmt.Sprintf("%.0fs", d.Seconds())
 }
+
+// CheckForUpdates checks if a new version is available
+// Only checks once per hour
+func (app *StatusBarApp) CheckForUpdates() (bool, string, error) {
+	// Throttle updates to once per hour
+	if time.Since(app.lastUpdateCheckTime) < time.Hour {
+		return false, "", nil
+	}
+
+	app.lastUpdateCheckTime = time.Now()
+
+	available, release, err := app.updateChecker.IsUpdateAvailable()
+	if err != nil {
+		log.Printf("Update check failed: %v", err)
+		return false, "", err
+	}
+
+	if available && release != nil {
+		return true, release.TagName, nil
+	}
+
+	return false, "", nil
+}
+
+// UpdateNow downloads and installs the latest version
+func (app *StatusBarApp) UpdateNow() {
+	SendNotification("Memofy", "Updating...", "Downloading latest version")
+	log.Println("Starting update...")
+
+	go func() {
+		release, err := app.updateChecker.GetLatestRelease()
+		if err != nil {
+			log.Printf("Failed to get latest release: %v", err)
+			SendErrorNotification("Update Failed", fmt.Sprintf("Could not fetch update: %v", err))
+			return
+		}
+
+		if err := app.updateChecker.DownloadAndInstall(release); err != nil {
+			log.Printf("Update failed: %v", err)
+			SendErrorNotification("Update Failed", fmt.Sprintf("Could not install update: %v", err))
+			return
+		}
+
+		SendNotification("Memofy", "Update Complete", "Version "+release.TagName+" installed. Please restart the app.")
+		log.Println("Update completed successfully. Restart required.")
+
+		// Optionally restart the app
+		// exec.Command("open", "-a", "Memofy").Run()
+	}()
+}
+
