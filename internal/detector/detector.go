@@ -34,6 +34,7 @@ type RawDetection struct {
 type DetectionState struct {
 	MeetingDetected bool            `json:"meeting_detected"`    // Stable detection result
 	DetectedApp     DetectedApp     `json:"detected_app"`        // Which app triggered
+	WindowTitle     string          `json:"window_title"`        // Active window title for filename
 	RawDetections   RawDetection    `json:"raw_detections"`      // Individual signal checks
 	ConfidenceLevel ConfidenceLevel `json:"confidence"`          // Detection confidence
 	EvaluatedAt     time.Time       `json:"evaluated_at"`        // When evaluated
