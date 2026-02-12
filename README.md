@@ -2,11 +2,11 @@
 
 ![Memofy Logo](./docs/memofy.png)
 
-Memofy is a macOS menu bar application that automatically detects and records Zoom/Teams meetings via OBS using intelligent detection and stable state control.
+Memofy is a macOS menu bar application that automatically detects and records Zoom, Microsoft Teams, and Google Meet meetings via OBS using intelligent detection and stable state control.
 
 ## Features
 
-- **Automatic Detection**: Detects Zoom and Microsoft Teams meetings in real-time with smart debounce (3/6)
+- **Automatic Detection**: Detects Zoom, Microsoft Teams, and Google Meet meetings in real-time with smart debounce (3/6)
 - **Intelligent Recording**: Anti-flap logic prevents short interruptions from fragmenting recordings
 - **Menu Bar Control**: Native macOS status display with quick-access controls
 - **Manual Override**: Force start/stop recording regardless of meeting detection
@@ -144,6 +144,10 @@ cat ~/.cache/memofy/status.json | jq
 - Process: `Microsoft Teams` running
 - Window title hints: configurable patterns
 
+**Google Meet**:
+- Browser running: Chrome, Safari, Firefox, Edge, Brave
+- Window title hints: "Google Meet" or "meet.google.com"
+
 **Debounce Thresholds**:
 - Start: 3 consecutive detections (6-9 seconds)
 - Stop: 6 consecutive non-detections (12-18 seconds)
@@ -173,6 +177,12 @@ Edit `~/.config/memofy/detection-rules.json`:
       "application": "teams",
       "process_names": ["Microsoft Teams"],
       "window_hints": ["Meeting", "Call"],
+      "enabled": true
+    },
+    {
+      "application": "google_meet",
+      "process_names": ["Google Chrome", "Safari", "Firefox"],
+      "window_hints": ["Google Meet", "meet.google.com"],
       "enabled": true
     }
   ],
