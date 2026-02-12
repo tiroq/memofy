@@ -226,6 +226,68 @@ MultiDetector
 - Supports all major browsers on macOS
 - No dependencies on browser-specific APIs
 
+## Workarounds & Solutions
+
+### For Users Who Need Background Detection
+
+Since Google Meet is only detected when the browser window is frontmost, here are your options:
+
+1. **Use Zoom/Teams as Primary** (Recommended)
+   - Zoom and Teams have stricter window detection (foreground window detection)
+   - They're also better at maintaining focus during meetings
+   - Use these for important meetings that need automatic recording
+
+2. **Manual Recording Control**
+   - Click "Start Recording" in Memofy menu bar when joining Google Meet
+   - Click "Stop Recording" when the meeting ends
+   - Works reliably regardless of window focus
+   - Takes ~2 seconds, good practice to confirm recording started
+
+3. **Keep Browser Window Visible**
+   - Use macOS Spaces/desktops effectively
+   - Keep browser on one Space, switch to it when needed for detection
+   - Use Stage Manager (macOS 13+) to partition your screen
+   - Alt-Tab to browser before expecting automatic recording
+
+4. **Dedicated Browser Window**
+   - Open Google Meet in a separate browser profile/window
+   - Size it to stay visible in corner of screen
+   - Window can be small but must be frontmost to be detected
+
+5. **Hybrid Approach** (Recommended)
+   - Start Google Meet
+   - Keep browser visible (even partially) during meeting start
+   - Memofy detects and starts recording automatically
+   - Once recording is confirmed, you can switch to other windows
+   - **Important**: Recording will continue; detection gap doesn't stop active recording
+
+### Why Not Detect Inactive Windows?
+
+The limitation exists because:
+- macOS Accessibility API prioritizes user privacy
+- Prevents apps from monitoring background windows without explicit permission
+- Same constraint affects all macOS applications
+- Apple intentionally restricts background window introspection
+
+### Alternative Meeting Platforms
+
+If you heavily use browser-based meetings, consider:
+- **Zoom Browser**: Zoom provides both app and web interface
+- **Microsoft Teams**: Teams app has better focus detection than browser
+- **Google Meet App** (if Google releases one): Would have full process detection
+
+### Known Workaround Limitations
+
+❌ **Won't work**:
+- Multiple browser windows with different meetings
+- Meeting in deactivated tab (only active tab detects window match)
+- Some fullscreen presentations (hides browser title bar)
+
+✅ **Will work**:
+- Multiple desktops/Spaces (switch to browser Space when meeting starts)
+- Picture-in-picture browser (if window title visible)
+- Browser in foreground for meeting initiation (~5 seconds)
+
 ## Future Enhancements
 
 ### Planned
