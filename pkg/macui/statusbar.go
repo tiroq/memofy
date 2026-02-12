@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tiroq/memofy/internal/autoupdate"
+	"github.com/tiroq/memofy/internal/config"
 	"github.com/tiroq/memofy/internal/ipc"
 )
 
@@ -36,9 +37,24 @@ func NewStatusBarApp() *StatusBarApp {
 	log.Println("  Status: cat ~/.cache/memofy/status.json")
 
 	installDir := filepath.Join(os.Getenv("HOME"), ".local", "bin")
+	checker := autoupdate.NewUpdateChecker("tiroq", "memofy", "0.1.0", installDir)
+	
+	// Set release channel based on config
+	cfg, err := config.LoadDetectionRules()
+	if err != nil {
+		log.Printf("Warning: Could not load config for release channel setting: %v", err)
+		checker.SetChannel(autoupdate.ChannelStable) // Default to stable
+	} else if cfg.AllowDevUpdates {
+		checker.SetChannel(autoupdate.ChannelPrerelease) // Allow pre-releases
+		log.Println("✓ Release channel set to: prerelease (dev updates enabled)")
+	} else {
+		checker.SetChannel(autoupdate.ChannelStable) // Default to stable
+		log.Println("✓ Release channel set to: stable")
+	}
+
 	return &StatusBarApp{
 		settingsWindow: NewSettingsWindow(),
-		updateChecker:  autoupdate.NewUpdateChecker("tiroq", "memofy", "0.1.0", installDir),
+		updateChecker:  checker,
 	}
 }
 
