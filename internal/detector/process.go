@@ -22,8 +22,8 @@ func NewProcessDetection() *ProcessDetection {
 func (pd *ProcessDetection) IsProcessRunning(processPatterns []string) (bool, string) {
 	apps := pd.workspace.RunningApplications()
 
-	for i := uint(0); i < apps.Count(); i++ {
-		app := appkit.RunningApplication_fromRef(apps.ObjectAtIndex(i).Ptr())
+	// RunningApplications returns a slice in darwinkit
+	for _, app := range apps {
 		if app.Ptr() == nil {
 			continue
 		}
@@ -33,12 +33,10 @@ func (pd *ProcessDetection) IsProcessRunning(processPatterns []string) (bool, st
 			continue
 		}
 
-		bundleIDStr := bundleID.String()
-
 		// Check if bundle ID matches any pattern
 		for _, pattern := range processPatterns {
-			if strings.Contains(strings.ToLower(bundleIDStr), strings.ToLower(pattern)) {
-				return true, bundleIDStr
+			if strings.Contains(strings.ToLower(bundleID), strings.ToLower(pattern)) {
+				return true, bundleID
 			}
 		}
 	}
@@ -59,7 +57,7 @@ func (pd *ProcessDetection) GetActiveWindowTitle() (string, error) {
 		return "", nil
 	}
 
-	return localizedName.String(), nil
+	return localizedName, nil
 }
 
 // WindowMatches checks if any window title contains the given hints
