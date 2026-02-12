@@ -86,7 +86,7 @@ func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
 			}
 		}
 	}
-	
+
 	if isRecording && !app.previousRecording {
 		// Started recording
 		app.recordingStartTime = time.Now()
@@ -188,7 +188,7 @@ func (app *StatusBarApp) OpenRecordingsFolder() {
 		}
 		return
 	}
-	
+
 	recordingsPath := filepath.Join(homeDir, "Movies", "Memofy")
 	cmd := exec.Command("open", recordingsPath, "-a", "Finder")
 	if err := cmd.Run(); err != nil {
