@@ -63,8 +63,11 @@ func (td *TeamsDetector) Detect() (*DetectionState, error) {
 	state.ConfidenceLevel = ConfidenceLow
 
 	// Check window title for meeting indicators
-	windowMatch, _ := td.processDetector.WindowMatches(teamsRule.WindowHints)
+	windowMatch, windowTitle := td.processDetector.WindowMatches(teamsRule.WindowHints)
 	state.RawDetections.TeamsWindowMatch = windowMatch
+	if windowMatch {
+		state.WindowTitle = windowTitle
+	}
 
 	// Determine confidence and meeting detection
 	if windowMatch {
