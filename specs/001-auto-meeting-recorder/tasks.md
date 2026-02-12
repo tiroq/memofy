@@ -106,7 +106,7 @@ This task breakdown organizes work by user story to enable independent implement
 ### Tasks
 
 - [X] T053 [US2] Implement command file watcher using fsnotify in cmd/memofy-core/main.go
-- [ ] T054 [US2] Add fallback polling (1s interval) for command file if fsnotify fails
+- [X] T054 [US2] Add fallback polling (1s interval) for command file if fsnotify fails
 - [X] T055 [US2] Implement command handler switch statement for all commands (start, stop, toggle, auto, pause, quit)
 - [X] T056 [P] [US2] Implement CmdStart handler: set mode to manual, call StartRecord() immediately
 - [X] T057 [P] [US2] Implement CmdStop handler: call StopRecord() immediately
@@ -115,10 +115,10 @@ This task breakdown organizes work by user story to enable independent implement
 - [X] T060 [P] [US2] Implement CmdPause handler: set mode to paused, suspend all detection
 - [X] T061 [P] [US2] Implement CmdQuit handler: stop recording if active, cleanup, exit gracefully
 - [X] T062 [US2] Update detection loop to skip actions when mode is Manual or Paused
-- [ ] T063 [US2] Test manual start command while no meeting detected (should start immediately)
-- [ ] T064 [US2] Test manual stop command while recording (should stop immediately)
-- [ ] T065 [US2] Test mode switching: auto → manual → auto (detection resumes after switching back)
-- [ ] T066 [US2] Test pause mode: verify detection doesn't run when paused
+- [X] T063 [US2] Test manual start command while no meeting detected (should start immediately)
+- [X] T064 [US2] Test manual stop command while recording (should stop immediately)
+- [X] T065 [US2] Test mode switching: auto → manual → auto (detection resumes after switching back)
+- [X] T066 [US2] Test pause mode: verify detection doesn't run when paused
 
 ---
 
@@ -167,10 +167,10 @@ This task breakdown organizes work by user story to enable independent implement
 - [X] T090 Create LaunchAgent plist template in scripts/com.memofy.core.plist with RunAtLoad, KeepAlive, log paths
 - [X] T091 Create install script in scripts/install-launchagent.sh that copies binaries, plist, loads with launchctl
 - [X] T092 [P] Create uninstall script in scripts/uninstall.sh that unloads and removes all files
-- [ ] T093 Implement filename renaming after recording stops: OBS path → YYYY-MM-DD_HHMM_App_Title.mp4 format
-- [ ] T094 [P] Implement meeting title extraction from window title (best effort, fallback to "Meeting")
-- [ ] T095 Add comprehensive logging: detection reasoning, state transitions, OBS commands, errors
-- [ ] T096 [P] Add log rotation or size limits to prevent unbounded growth in /tmp/
+- [X] T093 Implement filename renaming after recording stops: OBS path → YYYY-MM-DD_HHMM_App_Title.mp4 format
+- [X] T094 [P] Implement meeting title extraction from window title (best effort, fallback to "Meeting")
+- [X] T095 Add comprehensive logging: detection reasoning, state transitions, OBS commands, errors
+- [X] T096 [P] Add log rotation or size limits to prevent unbounded growth in /tmp/
 - [X] T097 Create README.md in project root with installation, usage, troubleshooting sections
 - [ ] T098 [P] Create user guide document with screenshots of menu bar states and settings
 - [ ] T099 Test full installation flow: install → verify daemon starts at login → verify menu bar appears
