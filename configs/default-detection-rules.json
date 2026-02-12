@@ -11,6 +11,12 @@
       "process_names": ["Microsoft Teams"],
       "window_hints": ["Meeting", "Call", "Reunión", "Anruf", "会議", "Réunion"],
       "enabled": true
+    },
+    {
+      "application": "google_meet",
+      "process_names": ["Google Chrome", "Chromium", "Safari", "Firefox", "Microsoft Edge", "Brave Browser"],
+      "window_hints": ["Google Meet", "meet.google.com"],
+      "enabled": true
     }
   ],
   "poll_interval_seconds": 2,
