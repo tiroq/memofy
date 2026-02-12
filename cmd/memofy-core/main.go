@@ -266,15 +266,16 @@ func writeStatus(sm *statemachine.StateMachine, detection *detector.DetectionSta
 	recordingState := obs.GetRecordingState()
 
 	status := ipc.StatusSnapshot{
-		Mode:           sm.CurrentMode(),
-		DetectionState: *detection,
-		RecordingState: recordingState,
-		TeamsDetected:  detection.DetectedApp == detector.AppTeams,
-		ZoomDetected:   detection.DetectedApp == detector.AppZoom,
-		StartStreak:    sm.GetDetectionStreak(),
-		StopStreak:     sm.GetAbsenceStreak(),
-		Timestamp:      time.Now(),
-		OBSConnected:   obs.IsConnected(),
+		Mode:             sm.CurrentMode(),
+		DetectionState:   *detection,
+		RecordingState:   recordingState,
+		TeamsDetected:    detection.DetectedApp == detector.AppTeams,
+		ZoomDetected:     detection.DetectedApp == detector.AppZoom,
+		GoogleMeetActive: detection.DetectedApp == detector.AppGoogleMeet,
+		StartStreak:      sm.GetDetectionStreak(),
+		StopStreak:       sm.GetAbsenceStreak(),
+		Timestamp:        time.Now(),
+		OBSConnected:     obs.IsConnected(),
 	}
 
 	return ipc.WriteStatus(&status)
