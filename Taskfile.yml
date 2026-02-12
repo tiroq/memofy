@@ -82,7 +82,31 @@ tasks:
   lint:
     desc: Run linter
     cmds:
-      - golangci-lint run ./...
+      - |
+        if command -v golangci-lint >/dev/null 2>&1; then
+          golangci-lint run ./...
+        else
+          echo "⚠️  golangci-lint not installed, using go vet instead"
+          echo "💡 Install golangci-lint with: task lint-install"
+          go vet ./...
+        fi
+
+  lint-install:
+    desc: Install golangci-lint
+    cmds:
+      - |
+        if command -v golangci-lint >/dev/null 2>&1; then
+          echo "✓ golangci-lint already installed"
+          golangci-lint version
+        elif command -v brew >/dev/null 2>&1; then
+          echo "→ Installing golangci-lint via Homebrew..."
+          brew install golangci-lint
+        else
+          echo "→ Installing golangci-lint via go install..."
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          echo "✓ Installed golangci-lint to $(go env GOPATH)/bin/golangci-lint"
+          echo "💡 Make sure $(go env GOPATH)/bin is in your PATH"
+        fi
 
   fmt:
     desc: Format code
