@@ -336,7 +336,10 @@ func (c *Client) handleResponse(resp *Response) {
 
 	// Parse request ID
 	var id int
-	fmt.Sscanf(resp.RequestID, "%d", &id)
+	if _, err := fmt.Sscanf(resp.RequestID, "%d", &id); err != nil {
+		log.Printf("Warning: failed to parse request ID: %v", err)
+		return
+	}
 
 	if ch, ok := c.responses[id]; ok {
 		ch <- resp
@@ -406,7 +409,9 @@ func (c *Client) disconnect() {
 	defer c.mu.Unlock()
 
 	if c.conn != nil {
-		c.conn.Close()
+		if err := c.conn.Close(); err != nil {
+			log.Printf("Warning: failed to close connection: %v", err)
+		}
 		c.conn = nil
 	}
 	c.connected = false
