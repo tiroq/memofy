@@ -76,6 +76,18 @@ get_latest_version() {
     curl -s "https://api.github.com/repos/tiroq/memofy/releases/latest" | grep '"tag_name":' | cut -d'"' -f4 | sed 's/^v//'
 }
 
+# Normalize architecture name to Go arch naming
+normalize_arch() {
+    local arch=$(uname -m)
+    if [ "$arch" = "x86_64" ]; then
+        echo "amd64"
+    elif [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then
+        echo "arm64"
+    else
+        echo "$arch"
+    fi
+}
+
 # Download binary from release
 download_release_binary() {
     local version=$1
@@ -84,12 +96,8 @@ download_release_binary() {
     print_info "Downloading Memofy v$version..."
     
     # Detect architecture
-    local arch=$(uname -m)
-    if [ "$arch" = "x86_64" ]; then
-        arch="amd64"
-    elif [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then
-        arch="arm64"
-    else
+    local arch=$(normalize_arch)
+    if [ "$arch" != "amd64" ] && [ "$arch" != "arm64" ]; then
         print_error "Unsupported architecture: $arch"
         return 1
     fi
@@ -316,7 +324,8 @@ main() {
         download_dir="/tmp/memofy-download-$$"
         if download_release_binary "$VERSION" "$download_dir"; then
             # Update binary paths to point to downloaded files
-            extracted_dir="$download_dir/memofy-${VERSION}-darwin-$(uname -m | sed 's/x86_64/amd64/')"
+            arch=$(normalize_arch)
+            extracted_dir="$download_dir/memofy-${VERSION}-darwin-${arch}"
             CORE_BINARY="$extracted_dir/memofy-core"
             UI_BINARY="$extracted_dir/memofy-ui"
         else
@@ -333,7 +342,7 @@ main() {
                 download_dir="/tmp/memofy-download-$$"
                 if download_release_binary "$latest_version" "$download_dir"; then
                     # Update binary paths to point to downloaded files
-                    arch=$(uname -m | sed 's/x86_64/amd64/')
+                    arch=$(normalize_arch)
                     extracted_dir="$download_dir/memofy-${latest_version}-darwin-${arch}"
                     CORE_BINARY="$extracted_dir/memofy-core"
                     UI_BINARY="$extracted_dir/memofy-ui"

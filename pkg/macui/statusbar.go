@@ -159,6 +159,8 @@ func (app *StatusBarApp) SetPauseMode() {
 }
 
 // OpenRecordingsFolder opens the OBS recordings directory in Finder (T078)
+// Assumes recordings are saved to ~/Movies/Memofy (OBS default recording path)
+// TODO: Read actual recording path from OBS configuration if different
 func (app *StatusBarApp) OpenRecordingsFolder() {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
