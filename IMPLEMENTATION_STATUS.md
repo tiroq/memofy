@@ -7,7 +7,7 @@
 
 Memofy is **feature-complete for core functionality** (automatic meeting detection and recording). The daemon implementation is production-ready, with a working file-based command interface. Full macOS menu bar UI integration is deferred due to complexity with darwinkit API.
 
-## Completion Status: 87/105 tasks (83%)
+## Completion Status: 84/105 tasks (80%)
 
 ### Phase 1: Project Setup ✅ 100% (10/10)
 - [X] Go module initialization
