@@ -6,11 +6,17 @@ Memofy is a macOS menu bar application that automatically detects and records Zo
 
 ## Features
 
-- **Automatic Detection**: Detects Zoom and Microsoft Teams meetings in real-time
-- **Intelligent Recording**: Anti-flap debounce logic prevents recording fragmentation
-- **Menu Bar Control**: Simple status display and manual controls
-- **OBS Integration**: Uses OBS WebSocket v5 for reliable recording
+- **Automatic Detection**: Detects Zoom and Microsoft Teams meetings in real-time with smart debounce (3/6)
+- **Intelligent Recording**: Anti-flap logic prevents short interruptions from fragmenting recordings
+- **Menu Bar Control**: Native macOS status display with quick-access controls
+- **Manual Override**: Force start/stop recording regardless of meeting detection
+- **OBS Integration**: Uses OBS WebSocket v5 for stable, reliable recording control
+- **Native Notifications**: macOS notifications for recording start/stop and errors
+- **Settings UI**: Adjust detection rules and thresholds from menu
+- **Smart Filenames**: Automatic renaming to `YYYY-MM-DD_HHMM_Application_Title.mp4`
 - **File-based IPC**: Daemon and UI communicate via status/command files
+- **Auto-start**: LaunchAgent ensures daemon runs at login
+- **Comprehensive Logging**: Detailed logs with 10MB rotation for troubleshooting
 
 ## System Requirements
 
@@ -51,48 +57,65 @@ make build
 
 ### 3. Usage
 
-> **Note**: The menu bar UI is currently a stub implementation. Full macOS menu bar integration with darwinkit is deferred pending macOS GUI expertise. The daemon (memofy-core) is fully functional and can be controlled via command-line by writing to `~/.cache/memofy/cmd.txt`.
->
-> **CLI Control**:
-> ```bash
-> # Start recording manually
-> echo 'start' > ~/.cache/memofy/cmd.txt
-> 
-> # Stop recording
-> echo 'stop' > ~/.cache/memofy/cmd.txt
-> 
-> # Toggle recording
-> echo 'toggle' > ~/.cache/memofy/cmd.txt
-> 
-> # Switch to auto mode
-> echo 'auto' > ~/.cache/memofy/cmd.txt
-> 
-> # Pause detection
-> echo 'pause' > ~/.cache/memofy/cmd.txt
-> 
-> # Check status
-> cat ~/.cache/memofy/status.json | jq
-> ```
+**Menu Bar UI**:
+The menu bar application displays meeting status and provides quick controls:
 
-**Menu Bar States** (when full UI is implemented):
-- ◯ **IDLE** (gray): Not recording, no meeting detected
-- ◐ **WAIT** (half-filled): Meeting detected, waiting for threshold (3 detections)
-- ● **REC** (filled): Actively recording
-- ⚠ **ERROR** (warning): Connection or permission error
+- Status Icons:
+  - ⚪ **IDLE** (white): Not recording, no meeting detected
+  - 🟡 **WAIT** (yellow): Meeting detected, waiting for threshold
+  - 🔴 **REC** (red): Actively recording
+  - ⏸ **PAUSED** (pause symbol): Detection paused
+  - ⚠️ **ERROR** (warning): Connection or permission error
 
-**Controls**:
-- **Start Recording**: Manually start recording immediately
-- **Stop Recording**: Manually stop current recording
-- **Auto Mode**: Automatic detection-based control (default)
-- **Pause**: Suspend all detection and recording
-- **Open Recordings Folder**: Opens Finder to OBS output directory
-- **Open Logs**: Opens `/tmp` to view daemon logs
+- Menu Controls:
+  - **Start Recording**: Manually start recording (switches to manual mode)
+  - **Stop Recording**: Manually stop recording
+  - **Auto Mode**: Automatic detection-based control (default)
+  - **Manual Mode**: Continuous recording, requires manual stop
+  - **Pause**: Suspend all detection and recording
+  - **Open Recordings Folder**: Opens OBS output directory
+  - **Open Logs**: View daemon logs for debugging
+  - **Settings**: Configure detection rules and thresholds
 
-**Configuration**:
-- Config file: `~/.config/memofy/detection-rules.json`
-- Status file: `~/.cache/memofy/status.json`
-- Command file: `~/.cache/memofy/cmd.txt`
-- Log files: `/tmp/memofy-core.{out,err}.log`
+**Settings UI**:
+Click "Settings" in the menu to:
+- Modify process names for Zoom and Teams detection
+- Adjust window title hints for meeting identification
+- Configure start/stop detection thresholds
+- Validate and save configuration
+
+**Notifications**:
+The app sends native macOS notifications for:
+- Recording started/stopped with duration
+- Mode changes (Auto/Manual/Pause)
+- Detection of meetings
+- Errors with actionable guidance
+
+**Command-Line Control** (alternative):
+If menu bar is unavailable, control daemon via:
+```bash
+# Start recording manually
+echo 'start' > ~/.cache/memofy/cmd.txt
+
+# Stop recording
+echo 'stop' > ~/.cache/memofy/cmd.txt
+
+# Switch to auto mode
+echo 'auto' > ~/.cache/memofy/cmd.txt
+
+# Pause detection
+echo 'pause' > ~/.cache/memofy/cmd.txt
+
+# Check current status
+cat ~/.cache/memofy/status.json | jq
+```
+
+**Files and Paths**:
+- **Config file**: `~/.config/memofy/detection-rules.json` (editable via Settings menu)
+- **Status file**: `~/.cache/memofy/status.json` (read-only, updated by daemon)
+- **Command file**: `~/.cache/memofy/cmd.txt` (write to send commands)
+- **Log files**: `/tmp/memofy-core.out.log` and `/tmp/memofy-core.err.log`
+- **LaunchAgent**: `~/Library/LaunchAgents/com.memofy.core.plist`
 
 ## Architecture
 
