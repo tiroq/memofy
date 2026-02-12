@@ -173,7 +173,7 @@ This task breakdown organizes work by user story to enable independent implement
 - [X] T096 [P] Add log rotation or size limits to prevent unbounded growth in /tmp/
 - [X] T097 Create README.md in project root with installation, usage, troubleshooting sections
 - [ ] T098 [P] Create user guide document with screenshots of menu bar states and settings
-- [ ] T099 Test full installation flow: install → verify daemon starts at login → verify menu bar appears
+- [X] T099 Test full installation flow: install → verify daemon starts at login → verify menu bar appears
 - [ ] T100 Test end-to-end: meeting start → auto record → manual stop → verify filename format correct
 - [ ] T101 Test error recovery: kill OBS during recording → verify reconnection → verify status shows error
 - [ ] T102 Test permissions: revoke Screen Recording → verify error notification with guidance
