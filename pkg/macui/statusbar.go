@@ -140,7 +140,7 @@ func (app *StatusBarApp) SetAutoMode() {
 // SetManualMode sends start command then switches tracking (T076)
 func (app *StatusBarApp) SetManualMode() {
 	app.sendCommand(ipc.CmdStart)
-	SendNotification("Memofy", "Mode Changed", "Switched to Manual mode - recording active")
+	SendNotification("Memofy", "Recording Started", "Manual recording started - auto-detection paused")
 }
 
 // SetPauseMode sends pause command (T077)
@@ -151,9 +151,15 @@ func (app *StatusBarApp) SetPauseMode() {
 
 // OpenRecordingsFolder opens the OBS recordings directory in Finder (T078)
 func (app *StatusBarApp) OpenRecordingsFolder() {
-	cmd := exec.Command("open",
-		"~/Movies/Memofy",
-		"-a", "Finder")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Printf("Failed to get home directory: %v", err)
+		SendNotification("Memofy", "Error", "Could not determine recordings folder location")
+		return
+	}
+	
+	recordingsPath := filepath.Join(homeDir, "Movies", "Memofy")
+	cmd := exec.Command("open", recordingsPath, "-a", "Finder")
 	if err := cmd.Run(); err != nil {
 		log.Printf("Failed to open recordings folder: %v", err)
 		SendNotification("Memofy", "Error", "Could not open recordings folder")

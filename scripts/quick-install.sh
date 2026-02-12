@@ -73,25 +73,56 @@ check_prerequisites() {
 
 # Get latest release version
 get_latest_version() {
-    curl -s "$LATEST_RELEASE_URL" | grep '"tag_name":' | cut -d'"' -f4 | sed 's/^v//'
+    curl -s "https://api.github.com/repos/tiroq/memofy/releases/latest" | grep '"tag_name":' | cut -d'"' -f4 | sed 's/^v//'
 }
 
 # Download binary from release
 download_release_binary() {
     local version=$1
-    local binary=$2
-    local temp_file="/tmp/$binary"
+    local output_dir="${2:-/tmp/memofy-download}"
     
-    print_info "Downloading $binary v$version..."
+    print_info "Downloading Memofy v$version..."
     
-    local download_url="$RELEASES_URL/v$version/$binary-darwin-arm64.zip"
-    
-    if curl -sfo "$temp_file.zip" "$download_url"; then
-        unzip -o "$temp_file.zip" -d /tmp
-        rm "$temp_file.zip"
-        print_success "Downloaded $binary"
-        echo "$temp_file"
+    # Detect architecture
+    local arch=$(uname -m)
+    if [ "$arch" = "x86_64" ]; then
+        arch="amd64"
+    elif [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then
+        arch="arm64"
     else
+        print_error "Unsupported architecture: $arch"
+        return 1
+    fi
+    
+    # Asset name format: memofy-VERSION-darwin-ARCH.zip
+    local asset_name="memofy-${version}-darwin-${arch}.zip"
+    local download_url="$RELEASES_URL/v$version/$asset_name"
+    local temp_file="/tmp/$asset_name"
+    
+    if ! curl -sfLo "$temp_file" "$download_url"; then
+        print_error "Failed to download from $download_url"
+        return 1
+    fi
+    
+    # Extract to output directory
+    mkdir -p "$output_dir"
+    if ! unzip -oq "$temp_file" -d "$output_dir"; then
+        print_error "Failed to extract archive"
+        rm -f "$temp_file"
+        return 1
+    fi
+    
+    rm -f "$temp_file"
+    
+    # Find the extracted binaries
+    local extracted_dir="$output_dir/memofy-${version}-darwin-${arch}"
+    if [ -f "$extracted_dir/memofy-core" ] && [ -f "$extracted_dir/memofy-ui" ]; then
+        print_success "Downloaded and extracted Memofy v$version"
+        echo "$extracted_dir/memofy-core"
+        echo "$extracted_dir/memofy-ui"
+        return 0
+    else
+        print_error "Downloaded archive does not contain expected binaries"
         return 1
     fi
 }
@@ -275,12 +306,23 @@ main() {
     echo ""
     
     # Get binaries (source or release)
+    CORE_BINARY="bin/memofy-core"
+    UI_BINARY="bin/memofy-ui"
+    
     if [ "$INSTALL_FROM_SOURCE" = true ]; then
         build_from_source
     elif [ "$INSTALL_FROM_RELEASE" = true ] && [ -n "$VERSION" ]; then
-        print_error "Release download not yet implemented"
-        print_info "Falling back to source build..."
-        build_from_source
+        print_info "Downloading release v$VERSION..."
+        download_dir="/tmp/memofy-download-$$"
+        if download_release_binary "$VERSION" "$download_dir"; then
+            # Update binary paths to point to downloaded files
+            extracted_dir="$download_dir/memofy-${VERSION}-darwin-$(uname -m | sed 's/x86_64/amd64/')"
+            CORE_BINARY="$extracted_dir/memofy-core"
+            UI_BINARY="$extracted_dir/memofy-ui"
+        else
+            print_info "Falling back to source build..."
+            build_from_source
+        fi
     else
         # Smart detection: try release, fall back to source
         if command -v curl &> /dev/null; then
@@ -288,9 +330,19 @@ main() {
             latest_version=$(get_latest_version 2>/dev/null || echo "")
             if [ -n "$latest_version" ]; then
                 print_success "Found release v$latest_version"
-                download_release_binary "$latest_version" "memofy-core" || build_from_source
-                download_release_binary "$latest_version" "memofy-ui" || build_from_source
+                download_dir="/tmp/memofy-download-$$"
+                if download_release_binary "$latest_version" "$download_dir"; then
+                    # Update binary paths to point to downloaded files
+                    arch=$(uname -m | sed 's/x86_64/amd64/')
+                    extracted_dir="$download_dir/memofy-${latest_version}-darwin-${arch}"
+                    CORE_BINARY="$extracted_dir/memofy-core"
+                    UI_BINARY="$extracted_dir/memofy-ui"
+                else
+                    print_info "Download failed, building from source..."
+                    build_from_source
+                fi
             else
+                print_info "No releases found, building from source..."
                 build_from_source
             fi
         else
@@ -300,7 +352,7 @@ main() {
     echo ""
     
     # Install binaries
-    install_binaries
+    install_binaries "$CORE_BINARY" "$UI_BINARY"
     install_config
     echo ""
     

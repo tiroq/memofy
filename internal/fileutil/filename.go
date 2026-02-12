@@ -1,6 +1,7 @@
 package fileutil
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -69,7 +70,7 @@ func RenameRecording(obsPath, newBasename string) (string, error) {
 		// File exists, append a number
 		base := strings.TrimSuffix(newBasename, ext)
 		for i := 2; i < 100; i++ {
-			tryPath := filepath.Join(dir, base+"_"+string(rune('0'+i))+ext)
+			tryPath := filepath.Join(dir, fmt.Sprintf("%s_%d%s", base, i, ext))
 			if _, err := os.Stat(tryPath); os.IsNotExist(err) {
 				newPath = tryPath
 				break

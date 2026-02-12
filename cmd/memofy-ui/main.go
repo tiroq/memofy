@@ -13,10 +13,15 @@ import (
 
 const appName = "Memofy"
 
-var statusBarApp *macui.StatusBarApp
+var (
+	// Version is set at build time via -ldflags "-X main.Version=..."
+	Version = "dev"
+
+	statusBarApp *macui.StatusBarApp
+)
 
 func main() {
-	log.Println("Memofy UI starting...")
+	log.Println("Memofy UI starting (version " + Version + ")...")
 
 	// Create status bar app
 	statusBarApp = macui.NewStatusBarApp()

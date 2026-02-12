@@ -25,6 +25,9 @@ const (
 )
 
 var (
+	// Version is set at build time via -ldflags "-X main.Version=..."
+	Version = "dev"
+
 	outLog *log.Logger
 	errLog *log.Logger
 
@@ -44,7 +47,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	outLog.Println("Starting Memofy Core v0.1...")
+	outLog.Println("Starting Memofy Core v" + Version + "...")
 
 	// Check macOS permissions
 	if err := checkPermissions(); err != nil {
