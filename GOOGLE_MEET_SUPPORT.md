@@ -138,9 +138,9 @@ Users can enable/disable Google Meet detection from Settings menu:
 
 ## Example Scenarios
 
-### Scenario 1: Chrome with Google Meet
+### Scenario 1: Chrome with Google Meet (WORKS ✅)
 ```
-1. User joins Google Meet in Chrome
+1. User joins Google Meet in Chrome (Chrome window is frontmost/active)
 2. Window title: "My Project Planning - Google Meet"
 3. Chrome process detected + window title match
 4. After 3 detections (6-9 seconds): Recording starts
@@ -149,16 +149,30 @@ Users can enable/disable Google Meet detection from Settings menu:
 7. After 6 non-detections (12-18 seconds): Recording stops
 ```
 
-### Scenario 2: Multiple Meetings (Zoom + Google Meet)
+### Scenario 2: Browser in Background (WON'T WORK ❌)
+```
+1. User has Google Meet in Chrome, but switches to Slack
+2. Chrome with Google Meet running in BACKGROUND
+3. Slack window is now frontmost/active
+4. Detector checks frontmost window (Slack) - no "Google Meet" title
+5. Google Meet NOT detected - recording doesn't start ⚠️
+6. User clicks back to Chrome (now frontmost)
+7. After 3 detections: Recording finally starts
+8. User switches away again - recording stops after 6 detections
+
+💡 WORKAROUND: Keep browser window visible, or use manual 'start' command
+```
+
+### Scenario 3: Multiple Meetings (Zoom + Google Meet)
 ```
 1. User has Zoom running AND Google Meet in Safari open
-2. Zoom has meeting active (CptHost process running) - HIGH confidence
+2. Zoom window is frontmost/active with meeting (CptHost process running) - HIGH confidence
 3. Zoom is preferred (higher confidence)
 4. Recording uses Zoom's title for filename
 5. Google Meet window title ignored (lower confidence)
 ```
 
-### Scenario 3: Custom Detection Rule
+### Scenario 4: Custom Detection Rule
 ```
 User edits detection rule to only detect Google Meet on Chrome:
 "process_names": ["Google Chrome"]
