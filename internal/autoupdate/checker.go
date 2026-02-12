@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -85,7 +86,11 @@ func (uc *UpdateChecker) getLatestStableRelease() (*Release, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch release: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("Warning: failed to close response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("github API returned status %d", resp.StatusCode)
@@ -107,7 +112,11 @@ func (uc *UpdateChecker) getLatestReleaseInChannel() (*Release, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch releases: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("Warning: failed to close response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("github API returned status %d", resp.StatusCode)
@@ -182,7 +191,11 @@ func (uc *UpdateChecker) DownloadAndInstall(release *Release) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tempFile)
+	defer func() {
+		if err := os.Remove(tempFile); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: failed to remove temp file: %v", err)
+		}
+	}()
 
 	// Extract and install binaries
 	if err := uc.installFromArchive(tempFile, asset.Name); err != nil {
@@ -230,7 +243,11 @@ func (uc *UpdateChecker) downloadAsset(asset *Asset) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to download: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("Warning: failed to close response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("download failed with status %d", resp.StatusCode)
@@ -240,7 +257,11 @@ func (uc *UpdateChecker) downloadAsset(asset *Asset) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("Warning: failed to close file: %v", err)
+		}
+	}()
 
 	// Download with progress tracking (optional)
 	if _, err := io.Copy(file, resp.Body); err != nil {
@@ -267,7 +288,11 @@ func (uc *UpdateChecker) installFromZip(zipPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open zip: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("Warning: failed to close file: %v", err)
+		}
+	}()
 
 	info, err := file.Stat()
 	if err != nil {
@@ -283,19 +308,27 @@ func (uc *UpdateChecker) installFromZip(zipPath string) error {
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return fmt.Errorf("failed to create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			log.Printf("Warning: failed to remove temp dir: %v", err)
+		}
+	}()
 
 	// Extract all files
 	for _, f := range reader.File {
 		fpath := filepath.Join(tempDir, f.Name)
 
 		if f.FileInfo().IsDir() {
-			os.MkdirAll(fpath, os.ModePerm)
+			if err := os.MkdirAll(fpath, os.ModePerm); err != nil {
+				return fmt.Errorf("failed to create directory: %w", err)
+			}
 			continue
 		}
 
 		// Create parent directory
-		os.MkdirAll(filepath.Dir(fpath), os.ModePerm)
+		if err := os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
+			return fmt.Errorf("failed to create parent directory: %w", err)
+		}
 
 		// Extract file
 		rc, err := f.Open()
@@ -305,13 +338,19 @@ func (uc *UpdateChecker) installFromZip(zipPath string) error {
 
 		outFile, err := os.Create(fpath)
 		if err != nil {
-			rc.Close()
+			if closeErr := rc.Close(); closeErr != nil {
+				log.Printf("Warning: failed to close reader: %v", closeErr)
+			}
 			return fmt.Errorf("failed to create extracted file: %w", err)
 		}
 
 		_, err = io.Copy(outFile, rc)
-		outFile.Close()
-		rc.Close()
+		if closeErr := outFile.Close(); closeErr != nil {
+			log.Printf("Warning: failed to close output file: %v", closeErr)
+		}
+		if closeErr := rc.Close(); closeErr != nil {
+			log.Printf("Warning: failed to close reader: %v", closeErr)
+		}
 
 		if err != nil {
 			return fmt.Errorf("failed to extract file: %w", err)
@@ -355,7 +394,9 @@ func (uc *UpdateChecker) installBinaries(sourceDir string) error {
 		}
 
 		// Make executable
-		os.Chmod(destPath, 0755)
+		if err := os.Chmod(destPath, 0755); err != nil {
+			log.Printf("Warning: failed to chmod %s: %v", destPath, err)
+		}
 	}
 
 	return nil
@@ -367,13 +408,21 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer source.Close()
+	defer func() {
+		if err := source.Close(); err != nil {
+			log.Printf("Warning: failed to close source file: %v", err)
+		}
+	}()
 
 	destination, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer destination.Close()
+	defer func() {
+		if err := destination.Close(); err != nil {
+			log.Printf("Warning: failed to close destination file: %v", err)
+		}
+	}()
 
 	_, err = io.Copy(destination, source)
 	return err
@@ -386,8 +435,12 @@ func isNewer(version1, version2 string) bool {
 
 	for i := 0; i < len(parts1) && i < len(parts2); i++ {
 		var v1, v2 int
-		fmt.Sscanf(parts1[i], "%d", &v1)
-		fmt.Sscanf(parts2[i], "%d", &v2)
+		if _, err := fmt.Sscanf(parts1[i], "%d", &v1); err != nil {
+			v1 = 0
+		}
+		if _, err := fmt.Sscanf(parts2[i], "%d", &v2); err != nil {
+			v2 = 0
+		}
 
 		if v1 > v2 {
 			return true
