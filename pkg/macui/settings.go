@@ -3,7 +3,6 @@ package macui
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -52,7 +51,7 @@ func NewSettingsWindow() *SettingsWindow {
 // Show displays the settings UI using AppleScript UI
 func (sw *SettingsWindow) Show() error {
 	// Create a more detailed settings form
-	script := fmt.Sprintf(`
+	script := `
 tell application "System Events"
 	activate
 	display dialog "Memofy Detection Settings" buttons {"Save", "Cancel"} default button "Cancel" with title "Settings"
@@ -65,7 +64,7 @@ tell application "System Events"
 		display notification "Settings saved" with title "Memofy" subtitle "Detection rules updated"
 	end if
 end tell
-`)
+`
 
 	cmd := exec.Command("osascript", "-e", script)
 	err := cmd.Run()
@@ -82,7 +81,9 @@ end tell
 func (sw *SettingsWindow) ShowSettingsForm() error {
 	// Create a temporary text file with current settings
 	defaultConfigPath := filepath.Join(os.Getenv("HOME"), ".config", "memofy", "detection-rules.json")
-	os.Mkdir(filepath.Dir(defaultConfigPath), 0755)
+	if err := os.MkdirAll(filepath.Dir(defaultConfigPath), 0755); err != nil {
+		log.Printf("Warning: failed to create config directory: %v", err)
+	}
 
 	// Display in system editor
 	cmd := exec.Command("open", "-t", defaultConfigPath)
@@ -131,9 +132,10 @@ func (sw *SettingsWindow) SaveSettings(zoomProcess, teamsProcess string, startTh
 
 	// Update configuration
 	for i, rule := range sw.detectionRules.Rules {
-		if rule.Application == "zoom" {
+		switch rule.Application {
+		case "zoom":
 			sw.detectionRules.Rules[i].ProcessNames = []string{zoomProcess}
-		} else if rule.Application == "teams" {
+		case "teams":
 			sw.detectionRules.Rules[i].ProcessNames = []string{teamsProcess}
 		}
 	}
@@ -148,7 +150,9 @@ func (sw *SettingsWindow) SaveSettings(zoomProcess, teamsProcess string, startTh
 	log.Printf("✓ Settings saved: Zoom=%s, Teams=%s, thresholds=%d/%d",
 		zoomProcess, teamsProcess, startThreshold, stopThreshold)
 
-	SendNotification("Memofy", "Settings Updated", "Detection rules saved successfully")
+	if err := SendNotification("Memofy", "Settings Updated", "Detection rules saved successfully"); err != nil {
+		log.Printf("Warning: failed to send notification: %v", err)
+	}
 
 	return nil
 }
@@ -157,7 +161,7 @@ func (sw *SettingsWindow) SaveSettings(zoomProcess, teamsProcess string, startTh
 func (sw *SettingsWindow) LoadSettingsFromFile() error {
 	configPath := filepath.Join(os.Getenv("HOME"), ".config", "memofy", "detection-rules.json")
 
-	data, err := ioutil.ReadFile(configPath)
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil // Will use defaults
@@ -182,12 +186,13 @@ func (sw *SettingsWindow) GetCurrentSettings() string {
 	teamsWindowHints := []string{}
 
 	for _, rule := range sw.detectionRules.Rules {
-		if rule.Application == "zoom" {
+		switch rule.Application {
+		case "zoom":
 			if len(rule.ProcessNames) > 0 {
 				zoomProcess = rule.ProcessNames[0]
 			}
 			zoomWindowHints = rule.WindowHints
-		} else if rule.Application == "teams" {
+		case "teams":
 			if len(rule.ProcessNames) > 0 {
 				teamsProcess = rule.ProcessNames[0]
 			}
