@@ -1,8 +1,9 @@
-.PHONY: build clean test run-core run-ui install
+.PHONY: build clean test run-core run-ui install quick-install release
 
 BINARY_CORE=bin/memofy-core
 BINARY_UI=bin/memofy-ui
 GO=CGO_ENABLED=1 GOOS=darwin go
+VERSION=0.1.0
 
 build:
 	mkdir -p bin
@@ -25,3 +26,13 @@ run-ui:
 
 install:
 	./scripts/install-launchagent.sh
+
+quick-install:
+	bash scripts/quick-install.sh
+
+quick-install-source:
+	bash scripts/quick-install.sh --source
+
+release:
+	bash scripts/build-release.sh $(VERSION)
+
