@@ -4,7 +4,39 @@ This guide explains how to create and publish releases for Memofy using GitHub A
 
 ## Quick Start: Publishing a Release
 
-### 1. Prepare the Release
+### Using Task (Recommended)
+
+The simplest way to create releases is using [Task](https://taskfile.dev/):
+
+```bash
+# Stable release (v0.2.0)
+task release-stable VERSION=0.2.0
+
+# Release candidate (v0.2.0-rc1)
+task release-rc VERSION=0.2.0 RC=1
+
+# Beta release (v0.2.0-beta1)
+task release-beta VERSION=0.2.0 BETA=1
+
+# Alpha release (v0.2.0-alpha1)
+task release-alpha VERSION=0.2.0 ALPHA=1
+```
+
+The task automatically:
+- ✅ Runs all tests
+- ✅ Runs linter
+- ✅ Verifies git is clean
+- ✅ Creates the tag
+- ✅ Pushes to GitHub
+- ✅ Triggers GitHub Actions
+
+See [Taskfile Guide](TASKFILE_GUIDE.md) for complete details.
+
+### Manual Method
+
+If you prefer manual control:
+
+1. **Prepare the Release**
 
 ```bash
 # Update version in code (if needed)
@@ -26,7 +58,7 @@ GitHub Actions automatically detects the tag and:
 - Creates pre-compiled binaries for each platform
 - Creates a GitHub Release with all artifacts attached
 
-### 2. Verify Release
+2. **Verify Release**
 
 1. Go to [GitHub Releases](https://github.com/tiroq/memofy/releases)
 2. Confirm the release appears with all platform artifacts
@@ -85,6 +117,59 @@ git push origin main v0.2.0-alpha1
 - Marked as "Pre-release" on GitHub
 - Earliest development milestone
 - For internal development team
+
+## Using Task for Releases
+
+[Task](https://taskfile.dev/) provides convenient commands for the entire release workflow.
+
+### Release Workflow with Task
+
+**1. Check if ready:**
+```bash
+task release-check
+```
+Automatically verifies:
+- ✅ All tests pass
+- ✅ Linter passes  
+- ✅ Git working directory is clean
+- ✅ On main branch
+
+**2. Create release:**
+```bash
+# Stable release
+task release-stable VERSION=0.2.0
+
+# Or pre-release
+task release-rc VERSION=0.2.0 RC=1
+```
+
+**3. Monitor:**
+```bash
+task release-status
+```
+
+### All Task Release Commands
+
+```bash
+# Stable releases
+task release-stable VERSION=0.2.0
+
+# Pre-releases
+task release-rc VERSION=0.2.0 RC=1      # Release candidate
+task release-beta VERSION=0.2.0 BETA=1  # Beta version
+task release-alpha VERSION=0.2.0 ALPHA=1 # Alpha version
+
+# Utilities
+task release-check           # Verify ready for release
+task release-list            # List all tags
+task release-status          # Check GitHub Actions status
+task release-delete VERSION=v0.2.0  # Delete a tag
+
+# Local testing
+task release-local           # Build all platforms locally
+```
+
+See [Taskfile Guide](TASKFILE_GUIDE.md) for complete documentation.
 
 ## Semantic Versioning
 
