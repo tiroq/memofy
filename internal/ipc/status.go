@@ -73,8 +73,12 @@ func atomicWriteJSON(path string, data interface{}) error {
 	// Ensure cleanup on error
 	defer func() {
 		if tmpFile != nil {
-			tmpFile.Close()
-			os.Remove(tmpPath)
+			if err := tmpFile.Close(); err != nil {
+				log.Printf("Warning: failed to close temp file: %v", err)
+			}
+			if err := os.Remove(tmpPath); err != nil && !os.IsNotExist(err) {
+				log.Printf("Warning: failed to remove temp file: %v", err)
+			}
 		}
 	}()
 
