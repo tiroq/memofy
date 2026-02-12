@@ -263,9 +263,20 @@ func (uc *UpdateChecker) installFromArchive(archivePath, archiveName string) err
 
 // installFromZip extracts and installs from a zip file
 func (uc *UpdateChecker) installFromZip(zipPath string) error {
-	reader, err := zip.NewReader(os.Open(zipPath))
+	file, err := os.Open(zipPath)
 	if err != nil {
 		return fmt.Errorf("failed to open zip: %w", err)
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat zip: %w", err)
+	}
+
+	reader, err := zip.NewReader(file, info.Size())
+	if err != nil {
+		return fmt.Errorf("failed to create zip reader: %w", err)
 	}
 
 	tempDir := filepath.Join(os.TempDir(), "memofy-update")
@@ -274,28 +285,8 @@ func (uc *UpdateChecker) installFromZip(zipPath string) error {
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Extract files
-	if err := reader.Close(); err != nil {
-		return fmt.Errorf("failed to close zip reader: %w", err)
-	}
-
-	// Reopen for extraction
-	file, err := os.Open(zipPath)
-	if err != nil {
-		return fmt.Errorf("failed to reopen zip: %w", err)
-	}
-	info, err := file.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to stat zip: %w", err)
-	}
-
-	zr, err := zip.NewReader(file, info.Size())
-	if err != nil {
-		return fmt.Errorf("failed to create zip reader: %w", err)
-	}
-
 	// Extract all files
-	for _, f := range zr.File {
+	for _, f := range reader.File {
 		fpath := filepath.Join(tempDir, f.Name)
 
 		if f.FileInfo().IsDir() {
