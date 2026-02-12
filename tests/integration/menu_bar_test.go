@@ -90,8 +90,14 @@ func TestControlCommandsWriteToFile(t *testing.T) {
 
 	// Create temporary cache directory
 	cacheDir := filepath.Join(os.TempDir(), "memofy-test-cache")
-	os.MkdirAll(cacheDir, 0755)
-	defer os.RemoveAll(cacheDir)
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatalf("Failed to create cache dir: %v", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(cacheDir); err != nil {
+			t.Logf("Warning: failed to remove cache dir: %v", err)
+		}
+	}()
 
 	// Override command file location for testing
 	cmdFile := filepath.Join(cacheDir, "cmd.txt")
@@ -141,11 +147,13 @@ func TestControlCommandsWriteToFile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clear any previous command
-			os.Remove(cmdFile)
+			_ = os.Remove(cmdFile) // Ignore error if file doesn't exist
 
 			// Create actual command by writing to cache
 			cacheDir := filepath.Join(os.Getenv("HOME"), ".cache", "memofy")
-			os.MkdirAll(cacheDir, 0755)
+			if err := os.MkdirAll(cacheDir, 0755); err != nil {
+				t.Fatalf("Failed to create cache dir: %v", err)
+			}
 			cmdFile = filepath.Join(cacheDir, "cmd.txt")
 
 			// Execute the operation
