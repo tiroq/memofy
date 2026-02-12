@@ -79,7 +79,20 @@
 
 ### Quick Release Process
 
-**1. Create and publish a release**:
+**Using Task (Recommended)**:
+
+```bash
+# Stable release
+task release-stable VERSION=0.2.0
+
+# Release candidate
+task release-rc VERSION=0.2.0 RC=1
+
+# Beta
+task release-beta VERSION=0.2.0 BETA=1
+```
+
+**Manual Method**:
 
 ```bash
 # Example: Release v0.2.0
@@ -87,13 +100,15 @@ git tag v0.2.0
 git push origin main v0.2.0
 ```
 
-**That's it!** GitHub Actions will:
+**Either way**, GitHub Actions will:
 - Automatically detect the tag
 - Build for all 6 platforms
 - Create a GitHub Release
 - Upload all artifacts
 
 **Workflow location**: `.github/workflows/release.yml`
+
+See [Taskfile Guide](TASKFILE_GUIDE.md) for complete Task commands.
 
 ### Release Types
 
@@ -299,6 +314,31 @@ tail -f ~/.cache/memofy/memofy-ui.log
 
 ### For Developers
 
+**Using Task**:
+```bash
+# Build binaries
+task build
+
+# Run tests
+task test
+
+# Install locally
+task install
+
+# Create stable release
+task release-stable VERSION=0.2.0
+
+# Create release candidate
+task release-rc VERSION=0.2.0 RC=1
+
+# Check release status
+task release-status
+
+# List all tasks
+task --list
+```
+
+**Manual/Traditional**:
 ```bash
 # Build locally (all platforms)
 ./scripts/build-release.sh
