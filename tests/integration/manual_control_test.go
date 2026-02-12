@@ -171,14 +171,18 @@ func TestCommandInterface(t *testing.T) {
 	t.Run("CommandModification", func(t *testing.T) {
 		// Simulate command file being updated
 		cmd1Path := filepath.Join(tmpDir, "cmd2.txt")
-		os.WriteFile(cmd1Path, []byte("start"), 0644)
+		if err := os.WriteFile(cmd1Path, []byte("start"), 0644); err != nil {
+			t.Fatalf("Failed to write file: %v", err)
+		}
 
 		// Check modification time
 		info1, _ := os.Stat(cmd1Path)
 		time.Sleep(100 * time.Millisecond)
 
 		// Update command
-		os.WriteFile(cmd1Path, []byte("stop"), 0644)
+		if err := os.WriteFile(cmd1Path, []byte("stop"), 0644); err != nil {
+			t.Fatalf("Failed to write file: %v", err)
+		}
 		info2, _ := os.Stat(cmd1Path)
 
 		// Verify modification time changed
