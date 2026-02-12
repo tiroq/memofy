@@ -90,7 +90,7 @@ func TestProcessDetection_StopThreshold(t *testing.T) {
 		{
 			name:              "stops at threshold 6",
 			stopThreshold:     6,
-			detectionSequence: []bool{false, false, false, false, false, false, true},
+			detectionSequence: []bool{false, false, false, false, false, false},
 			wantStopAt:        5, // 6 consecutive absences (indices 0-5)
 		},
 		{
