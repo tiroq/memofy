@@ -12,6 +12,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/tiroq/memofy/internal/config"
 	"github.com/tiroq/memofy/internal/detector"
+	"github.com/tiroq/memofy/internal/fileutil"
 	"github.com/tiroq/memofy/internal/ipc"
 	"github.com/tiroq/memofy/internal/obsws"
 	"github.com/tiroq/memofy/internal/statemachine"
@@ -26,6 +27,14 @@ const (
 var (
 	outLog *log.Logger
 	errLog *log.Logger
+	
+	// Meeting context for file renaming
+	currentMeetingTitle string
+	currentMeetingStart time.Time
+	currentMeetingApp   detector.DetectedApp
+	
+	// Logging counters
+	noMeetingLogCounter int
 )
 
 func main() {
@@ -125,7 +134,11 @@ func main() {
 
 			// Handle recording actions
 			if shouldStart {
-				handleStartRecording(stateMachine, obsClient, app)
+				// Capture meeting context for filename
+				currentMeetingTitle = detectionState.WindowTitle
+				currentMeetingStart = time.Now()
+				currentMeetingApp = app
+				handleStartRecording(stateMachine, obsClient, app, detectionState.WindowTitle)
 			} else if shouldStop {
 				handleStopRecording(stateMachine, obsClient)
 			}
@@ -151,8 +164,8 @@ func main() {
 }
 
 // handleStartRecording starts OBS recording with appropriate filename
-func handleStartRecording(sm *statemachine.StateMachine, obs *obsws.Client, app detector.DetectedApp) {
-	// Generate filename: YYYY-MM-DD_HHMM_Application_Title.mp4
+func handleStartRecording(sm *statemachine.StateMachine, obs *obsws.Client, app detector.DetectedApp, windowTitle string) {
+	// Generate temporary filename for OBS
 	now := time.Now()
 	appName := "Meeting"
 	if app == detector.AppZoom {
@@ -161,23 +174,23 @@ func handleStartRecording(sm *statemachine.StateMachine, obs *obsws.Client, app 
 		appName = "Teams"
 	}
 
-	filename := fmt.Sprintf("%s_%s_%s.mp4",
+	tempFilename := fmt.Sprintf("%s_%s_%s_temp.mp4",
 		now.Format("2006-01-02"),
 		now.Format("1504"),
 		appName)
 
-	outLog.Printf("Starting recording: %s", filename)
+	outLog.Printf("Starting recording: %s (will rename after stop)", tempFilename)
 
-	if err := obs.StartRecord(filename); err != nil {
+	if err := obs.StartRecord(tempFilename); err != nil {
 		errLog.Printf("Failed to start recording: %v", err)
 		return
 	}
 
 	sm.StartRecording(app)
-	outLog.Printf("Recording started successfully (app=%s, streak=%d)", app, sm.GetDetectionStreak())
+	outLog.Printf("Recording started successfully (app=%s, streak=%d, title=%q)", app, sm.GetDetectionStreak(), windowTitle)
 }
 
-// handleStopRecording stops OBS recording
+// handleStopRecording stops OBS recording and renames to proper format
 func handleStopRecording(sm *statemachine.StateMachine, obs *obsws.Client) {
 	duration := sm.RecordingDuration()
 	outLog.Printf("Stopping recording after %s (absence_streak=%d)", duration, sm.GetAbsenceStreak())
@@ -190,22 +203,61 @@ func handleStopRecording(sm *statemachine.StateMachine, obs *obsws.Client) {
 
 	sm.StopRecording()
 	outLog.Printf("Recording stopped successfully: %s", outputPath)
+
+	// Rename file to proper format: YYYY-MM-DD_HHMM_Application_Title.mp4
+	appName := "Meeting"
+	if currentMeetingApp == detector.AppZoom {
+		appName = "Zoom"
+	} else if currentMeetingApp == detector.AppTeams {
+		appName = "Teams"
+	}
+
+	// Sanitize window title for filename
+	titlePart := fileutil.SanitizeForFilename(currentMeetingTitle)
+
+	// Build new filename
+	newBasename := fmt.Sprintf("%s_%s_%s_%s",
+		currentMeetingStart.Format("2006-01-02"),
+		currentMeetingStart.Format("1504"),
+		appName,
+		titlePart)
+
+	// Rename the file
+	finalPath, err := fileutil.RenameRecording(outputPath, newBasename)
+	if err != nil {
+		errLog.Printf("Failed to rename recording: %v (original path: %s)", err, outputPath)
+		return
+	}
+
+	outLog.Printf("Recording renamed to: %s", finalPath)
+
+	// Clear meeting context
+	currentMeetingTitle = ""
+	currentMeetingApp = detector.AppNone
 }
 
 // logDetectionResult logs detection details for debugging
 func logDetectionResult(state *detector.DetectionState) {
 	if state.MeetingDetected {
-		outLog.Printf("Detection: MEETING DETECTED (app=%s, confidence=%s) [zoom_proc=%v, zoom_host=%v, zoom_window=%v, teams_proc=%v, teams_window=%v]",
+		outLog.Printf("Detection: MEETING DETECTED (app=%s, confidence=%s, title=%q) [zoom_proc=%v, zoom_host=%v, zoom_window=%v, teams_proc=%v, teams_window=%v]",
 			state.DetectedApp,
 			state.ConfidenceLevel,
+			state.WindowTitle,
 			state.RawDetections.ZoomProcessRunning,
 			state.RawDetections.ZoomHostRunning,
 			state.RawDetections.ZoomWindowMatch,
 			state.RawDetections.TeamsProcessRunning,
 			state.RawDetections.TeamsWindowMatch)
+		noMeetingLogCounter = 0 // Reset counter when meeting detected
 	} else {
-		// Only log "no meeting" every 10 polls to reduce log spam
-		// (Could add a counter here if needed)
+		// Log "no meeting" every 20 polls (40-60s) to reduce spam
+		noMeetingLogCounter++
+		if noMeetingLogCounter >= 20 {
+			outLog.Printf("Detection: NO MEETING (zoom_proc=%v, teams_proc=%v)",
+				state.RawDetections.ZoomProcessRunning,
+				state.RawDetections.TeamsProcessRunning)
+			noMeetingLogCounter = 0
+		}
 	}
 }
 
@@ -214,12 +266,15 @@ func writeStatus(sm *statemachine.StateMachine, detection *detector.DetectionSta
 	recordingState := obs.GetRecordingState()
 
 	status := ipc.StatusSnapshot{
-		Mode:            sm.CurrentMode(),
-		DetectionState:  *detection,
-		RecordingState:  recordingState,
-		DetectionStreak: sm.GetDetectionStreak(),
-		AbsenceStreak:   sm.GetAbsenceStreak(),
-		LastUpdated:     time.Now(),
+		Mode:           sm.CurrentMode(),
+		DetectionState: *detection,
+		RecordingState: recordingState,
+		TeamsDetected:  detection.DetectedApp == detector.AppTeams,
+		ZoomDetected:   detection.DetectedApp == detector.AppZoom,
+		StartStreak:    sm.GetDetectionStreak(),
+		StopStreak:     sm.GetAbsenceStreak(),
+		Timestamp:      time.Now(),
+		OBSConnected:   obs.IsConnected(),
 	}
 
 	return ipc.WriteStatus(&status)
@@ -227,27 +282,38 @@ func writeStatus(sm *statemachine.StateMachine, detection *detector.DetectionSta
 
 // watchCommands monitors cmd.txt for manual control commands
 func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
+	cmdPath := filepath.Join(os.Getenv("HOME"), ".cache", "memofy", "cmd.txt")
+	cmdDir := filepath.Dir(cmdPath)
+
+	// Try to use fsnotify for efficient file watching
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		errLog.Printf("Failed to create file watcher: %v", err)
+		errLog.Printf("fsnotify not available, falling back to polling: %v", err)
+		watchCommandsWithPolling(cmdPath, sm, obs)
 		return
 	}
 	defer watcher.Close()
 
-	cmdPath := filepath.Join(os.Getenv("HOME"), ".cache", "memofy", "cmd.txt")
-	cmdDir := filepath.Dir(cmdPath)
-
 	if err := watcher.Add(cmdDir); err != nil {
-		errLog.Printf("Failed to watch command directory: %v", err)
+		errLog.Printf("Failed to watch command directory, falling back to polling: %v", err)
+		watchCommandsWithPolling(cmdPath, sm, obs)
 		return
 	}
 
-	outLog.Println("Command watcher started")
+	outLog.Println("Command watcher started (using fsnotify)")
+
+	// Add fallback polling ticker in case fsnotify fails
+	pollTicker := time.NewTicker(1 * time.Second)
+	defer pollTicker.Stop()
+	
+	lastCheckTime := time.Now()
 
 	for {
 		select {
 		case event, ok := <-watcher.Events:
 			if !ok {
+				outLog.Println("fsnotify watcher closed, switching to polling")
+				watchCommandsWithPolling(cmdPath, sm, obs)
 				return
 			}
 
@@ -261,10 +327,27 @@ func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 				}
 
 				handleCommand(cmd, sm, obs)
+				lastCheckTime = time.Now()
+			}
+
+		case <-pollTicker.C:
+			// Fallback polling: check for commands if file was modified since last check
+			if fileInfo, err := os.Stat(cmdPath); err == nil {
+				if fileInfo.ModTime().After(lastCheckTime) {
+					time.Sleep(50 * time.Millisecond) // Ensure write is complete
+					
+					cmd, err := ipc.ReadCommand()
+					if err == nil && cmd != "" {
+						handleCommand(cmd, sm, obs)
+						lastCheckTime = time.Now()
+					}
+				}
 			}
 
 		case err, ok := <-watcher.Errors:
 			if !ok {
+				outLog.Println("fsnotify error channel closed, switching to polling")
+				watchCommandsWithPolling(cmdPath, sm, obs)
 				return
 			}
 			errLog.Printf("File watcher error: %v", err)
@@ -272,8 +355,36 @@ func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 	}
 }
 
+// watchCommandsWithPolling is a pure polling-based fallback for command monitoring
+func watchCommandsWithPolling(cmdPath string, sm *statemachine.StateMachine, obs *obsws.Client) {
+	outLog.Println("Command watcher started (using polling fallback, 1s interval)")
+	
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	
+	lastCheckTime := time.Now()
+
+	for range ticker.C {
+		// Check if file was modified since last check
+		fileInfo, err := os.Stat(cmdPath)
+		if err != nil {
+			continue // File doesn't exist yet, keep polling
+		}
+
+		if fileInfo.ModTime().After(lastCheckTime) {
+			time.Sleep(50 * time.Millisecond) // Ensure write is complete
+			
+			cmd, err := ipc.ReadCommand()
+			if err == nil && cmd != "" {
+				handleCommand(cmd, sm, obs)
+			}
+			lastCheckTime = time.Now()
+		}
+	}
+}
+
 // handleCommand processes manual control commands
-func handleCommand(cmd string, sm *statemachine.StateMachine, obs *obsws.Client) {
+func handleCommand(cmd ipc.Command, sm *statemachine.StateMachine, obs *obsws.Client) {
 	outLog.Printf("Received command: %s", cmd)
 
 	switch cmd {
@@ -282,7 +393,11 @@ func handleCommand(cmd string, sm *statemachine.StateMachine, obs *obsws.Client)
 			errLog.Printf("ForceStart failed: %v", err)
 			return
 		}
-		handleStartRecording(sm, obs, detector.AppNone)
+		// Capture context for manual start
+		currentMeetingTitle = "Manual"
+		currentMeetingStart = time.Now()
+		currentMeetingApp = detector.AppNone
+		handleStartRecording(sm, obs, detector.AppNone, "Manual")
 
 	case ipc.CmdStop:
 		if err := sm.ForceStop(); err != nil {
@@ -295,7 +410,7 @@ func handleCommand(cmd string, sm *statemachine.StateMachine, obs *obsws.Client)
 		sm.SetMode(ipc.ModeAuto)
 		outLog.Println("Mode changed to AUTO")
 
-	case ipc.CmdPaused:
+	case ipc.CmdPause:
 		sm.SetMode(ipc.ModePaused)
 		outLog.Println("Mode changed to PAUSED")
 
@@ -312,7 +427,11 @@ func handleCommand(cmd string, sm *statemachine.StateMachine, obs *obsws.Client)
 				errLog.Printf("ForceStart failed: %v", err)
 				return
 			}
-			handleStartRecording(sm, obs, detector.AppNone)
+			// Capture context for manual toggle
+			currentMeetingTitle = "Manual"
+			currentMeetingStart = time.Now()
+			currentMeetingApp = detector.AppNone
+			handleStartRecording(sm, obs, detector.AppNone, "Manual")
 		}
 
 	case ipc.CmdQuit:
@@ -324,20 +443,60 @@ func handleCommand(cmd string, sm *statemachine.StateMachine, obs *obsws.Client)
 	}
 }
 
-// initLogging sets up log files
+// initLogging sets up log files with rotation support
 func initLogging() error {
-	outFile, err := os.OpenFile("/tmp/memofy-core.out.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// Create log directory if it doesn't exist
+	logDir := "/tmp"
+	
+	// Rotate logs if they exceed 10MB
+	outLogPath := filepath.Join(logDir, "memofy-core.out.log")
+	errLogPath := filepath.Join(logDir, "memofy-core.err.log")
+	
+	if err := rotateLogIfNeeded(outLogPath, 10*1024*1024); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to rotate out log: %v\n", err)
+	}
+	
+	if err := rotateLogIfNeeded(errLogPath, 10*1024*1024); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to rotate err log: %v\n", err)
+	}
+
+	outFile, err := os.OpenFile(outLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return err
 	}
 
-	errFile, err := os.OpenFile("/tmp/memofy-core.err.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	errFile, err := os.OpenFile(errLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return err
 	}
 
 	outLog = log.New(outFile, logPrefix+" ", log.LstdFlags)
 	errLog = log.New(errFile, logPrefix+" ERROR: ", log.LstdFlags)
+
+	return nil
+}
+
+// rotateLogIfNeeded rotates a log file if it exceeds maxSize bytes
+func rotateLogIfNeeded(logPath string, maxSize int64) error {
+	info, err := os.Stat(logPath)
+	if os.IsNotExist(err) {
+		return nil // Log doesn't exist yet
+	}
+	if err != nil {
+		return err
+	}
+
+	if info.Size() < maxSize {
+		return nil // Log is under size limit
+	}
+
+	// Rotate: rename current log to .old, removing previous .old
+	oldPath := logPath + ".old"
+	os.Remove(oldPath) // Remove previous backup (ignore errors)
+
+	if err := os.Rename(logPath, oldPath); err != nil {
+		return err
+	}
 
 	return nil
 }
