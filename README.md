@@ -51,7 +51,30 @@ make build
 
 ### 3. Usage
 
-**Menu Bar States**:
+> **Note**: The menu bar UI is currently a stub implementation. Full macOS menu bar integration with darwinkit is deferred pending macOS GUI expertise. The daemon (memofy-core) is fully functional and can be controlled via command-line by writing to `~/.cache/memofy/cmd.txt`.
+>
+> **CLI Control**:
+> ```bash
+> # Start recording manually
+> echo 'start' > ~/.cache/memofy/cmd.txt
+> 
+> # Stop recording
+> echo 'stop' > ~/.cache/memofy/cmd.txt
+> 
+> # Toggle recording
+> echo 'toggle' > ~/.cache/memofy/cmd.txt
+> 
+> # Switch to auto mode
+> echo 'auto' > ~/.cache/memofy/cmd.txt
+> 
+> # Pause detection
+> echo 'pause' > ~/.cache/memofy/cmd.txt
+> 
+> # Check status
+> cat ~/.cache/memofy/status.json | jq
+> ```
+
+**Menu Bar States** (when full UI is implemented):
 - ◯ **IDLE** (gray): Not recording, no meeting detected
 - ◐ **WAIT** (half-filled): Meeting detected, waiting for threshold (3 detections)
 - ● **REC** (filled): Actively recording
