@@ -191,9 +191,10 @@ func handleStartRecording(sm *statemachine.StateMachine, obs *obsws.Client, app 
 	// Generate temporary filename for OBS
 	now := time.Now()
 	appName := "Meeting"
-	if app == detector.AppZoom {
+	switch app {
+	case detector.AppZoom:
 		appName = "Zoom"
-	} else if app == detector.AppTeams {
+	case detector.AppTeams:
 		appName = "Teams"
 	}
 
@@ -229,9 +230,10 @@ func handleStopRecording(sm *statemachine.StateMachine, obs *obsws.Client) {
 
 	// Rename file to proper format: YYYY-MM-DD_HHMM_Application_Title.mp4
 	appName := "Meeting"
-	if currentMeetingApp == detector.AppZoom {
+	switch currentMeetingApp {
+	case detector.AppZoom:
 		appName = "Zoom"
-	} else if currentMeetingApp == detector.AppTeams {
+	case detector.AppTeams:
 		appName = "Teams"
 	}
 
@@ -316,7 +318,11 @@ func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 		watchCommandsWithPolling(cmdPath, sm, obs)
 		return
 	}
-	defer watcher.Close()
+	defer func() {
+		if err := watcher.Close(); err != nil {
+			errLog.Printf("Failed to close watcher: %v", err)
+		}
+	}()
 
 	if err := watcher.Add(cmdDir); err != nil {
 		errLog.Printf("Failed to watch command directory, falling back to polling: %v", err)
@@ -516,7 +522,9 @@ func rotateLogIfNeeded(logPath string, maxSize int64) error {
 
 	// Rotate: rename current log to .old, removing previous .old
 	oldPath := logPath + ".old"
-	os.Remove(oldPath) // Remove previous backup (ignore errors)
+	if err := os.Remove(oldPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove old log: %w", err)
+	}
 
 	if err := os.Rename(logPath, oldPath); err != nil {
 		return err
