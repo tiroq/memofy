@@ -27,12 +27,12 @@ const (
 var (
 	outLog *log.Logger
 	errLog *log.Logger
-	
+
 	// Meeting context for file renaming
 	currentMeetingTitle string
 	currentMeetingStart time.Time
 	currentMeetingApp   detector.DetectedApp
-	
+
 	// Logging counters
 	noMeetingLogCounter int
 )
@@ -305,7 +305,7 @@ func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 	// Add fallback polling ticker in case fsnotify fails
 	pollTicker := time.NewTicker(1 * time.Second)
 	defer pollTicker.Stop()
-	
+
 	lastCheckTime := time.Now()
 
 	for {
@@ -335,7 +335,7 @@ func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 			if fileInfo, err := os.Stat(cmdPath); err == nil {
 				if fileInfo.ModTime().After(lastCheckTime) {
 					time.Sleep(50 * time.Millisecond) // Ensure write is complete
-					
+
 					cmd, err := ipc.ReadCommand()
 					if err == nil && cmd != "" {
 						handleCommand(cmd, sm, obs)
@@ -358,10 +358,10 @@ func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 // watchCommandsWithPolling is a pure polling-based fallback for command monitoring
 func watchCommandsWithPolling(cmdPath string, sm *statemachine.StateMachine, obs *obsws.Client) {
 	outLog.Println("Command watcher started (using polling fallback, 1s interval)")
-	
+
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
-	
+
 	lastCheckTime := time.Now()
 
 	for range ticker.C {
@@ -373,7 +373,7 @@ func watchCommandsWithPolling(cmdPath string, sm *statemachine.StateMachine, obs
 
 		if fileInfo.ModTime().After(lastCheckTime) {
 			time.Sleep(50 * time.Millisecond) // Ensure write is complete
-			
+
 			cmd, err := ipc.ReadCommand()
 			if err == nil && cmd != "" {
 				handleCommand(cmd, sm, obs)
@@ -447,15 +447,15 @@ func handleCommand(cmd ipc.Command, sm *statemachine.StateMachine, obs *obsws.Cl
 func initLogging() error {
 	// Create log directory if it doesn't exist
 	logDir := "/tmp"
-	
+
 	// Rotate logs if they exceed 10MB
 	outLogPath := filepath.Join(logDir, "memofy-core.out.log")
 	errLogPath := filepath.Join(logDir, "memofy-core.err.log")
-	
+
 	if err := rotateLogIfNeeded(outLogPath, 10*1024*1024); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to rotate out log: %v\n", err)
 	}
-	
+
 	if err := rotateLogIfNeeded(errLogPath, 10*1024*1024); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to rotate err log: %v\n", err)
 	}
