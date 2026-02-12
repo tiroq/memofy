@@ -79,6 +79,7 @@ func (md *MultiDetector) Detect() (*DetectionState, error) {
 		result.MeetingDetected = true
 		result.DetectedApp = bestState.DetectedApp
 		result.ConfidenceLevel = bestState.ConfidenceLevel
+		result.WindowTitle = bestState.WindowTitle
 	}
 
 	return result, nil
