@@ -26,6 +26,11 @@ type StatusBarApp struct {
 	lastUpdateCheckTime time.Time
 }
 
+// GetCurrentStatus returns the current status snapshot (for testing)
+func (app *StatusBarApp) GetCurrentStatus() *ipc.StatusSnapshot {
+	return app.currentStatus
+}
+
 // NewStatusBarApp creates and initializes the menu bar application
 func NewStatusBarApp() *StatusBarApp {
 	log.Println("✓ StatusBarApp initialized")
@@ -224,8 +229,6 @@ func getDetectedAppString(status *ipc.StatusSnapshot) string {
 	if status.GoogleMeetActive {
 		return "Google Meet"
 	}
-	return "None"
-}
 	return "None"
 }
 
