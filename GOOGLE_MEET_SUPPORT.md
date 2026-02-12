@@ -112,10 +112,16 @@ Users can enable/disable Google Meet detection from Settings menu:
 
 ## Limitations & Considerations
 
+### ⚠️ IMPORTANT: Frontmost Window Detection Only
+- **Only detects meetings in the FRONTMOST (active) browser window**
+- If browser is in background, Google Meet won't be detected even if meeting is active
+- This is a macOS Accessibility API limitation (no way around it currently)
+- **Workaround**: Click browser window before meeting starts, or use manual recording control
+
 ### Browser Detection
 - Detects ANY browser window, not just Google Meet tabs
-- May trigger if browser is open with Google Meet tab even if not in meeting
-- User can narrow detection by editing window hints
+- May show as detected if browser is open with "Google Meet" in title (even paused)
+- User can narrow detection by editing window hints to be more specific
 
 ### Window Title
 - Window title detection is language-dependent
