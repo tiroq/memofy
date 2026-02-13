@@ -23,6 +23,7 @@ var (
 	Version = "dev"
 
 	statusBarApp *macui.StatusBarApp
+	app          appkit.Application
 )
 
 func main() {
@@ -72,7 +73,7 @@ func main() {
 
 	// Initialize macOS application with timeout protection
 	log.Println("[STARTUP] Initializing macOS application...")
-	
+
 	// Create a timeout context for UI initialization (5 seconds)
 	// If UI framework hangs, this will fail fast instead of deadlocking
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -94,14 +95,14 @@ func main() {
 		}()
 
 		// Initialize the application
-		app := appkit.Application_SharedApplication()
+		app = appkit.Application_SharedApplication()
 		app.SetActivationPolicy(appkit.ApplicationActivationPolicyAccessory)
 		log.Println("[STARTUP] macOS Application initialized")
 
 		// Create status bar app with panic protection
-		statusBarApp, err = macui.NewStatusBarApp()
-		if err != nil {
-			initErr = fmt.Errorf("failed to create status bar app: %w", err)
+		statusBarApp = macui.NewStatusBarApp()
+		if statusBarApp == nil {
+			initErr = fmt.Errorf("failed to create status bar app: returned nil")
 			log.Printf("[STARTUP] ERROR: %v", initErr)
 			return
 		}
