@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/progrium/darwinkit/macos/appkit"
+	"github.com/progrium/darwinkit/objc"
 	"github.com/tiroq/memofy/internal/autoupdate"
 	"github.com/tiroq/memofy/internal/config"
 	"github.com/tiroq/memofy/internal/ipc"
@@ -16,6 +18,8 @@ import (
 // StatusBarApp represents the menu bar application
 // Implements status monitoring, menu display, and command interface
 type StatusBarApp struct {
+	statusItem          appkit.StatusItem
+	menu                appkit.Menu
 	currentStatus       *ipc.StatusSnapshot
 	lastErrorShown      string
 	lastErrorTime       time.Time
@@ -57,10 +61,38 @@ func NewStatusBarApp() *StatusBarApp {
 		log.Println("✓ Release channel set to: stable")
 	}
 
-	return &StatusBarApp{
+	app := &StatusBarApp{
 		settingsWindow: NewSettingsWindow(),
 		updateChecker:  checker,
 	}
+
+	// Create status bar item
+	app.createStatusBar()
+
+	return app
+}
+
+// createStatusBar initializes the menu bar icon and menu
+func (app *StatusBarApp) createStatusBar() {
+	// Create status item in system status bar
+	statusBar := appkit.StatusBar_SystemStatusBar()
+	app.statusItem = statusBar.StatusItemWithLength(appkit.VariableStatusItemLength)
+
+	// Set initial button state
+	button := app.statusItem.Button()
+	button.SetTitle("⚫") // Initial idle state
+
+	// Create menu
+	app.menu = appkit.NewMenu()
+	app.menu.SetAutoenablesItems(false)
+
+	// Build menu items
+	app.rebuildMenu()
+
+	// Attach menu to status item
+	app.statusItem.SetMenu(app.menu)
+
+	log.Println("✓ Menu bar icon created")
 }
 
 // UpdateStatus refreshes the UI based on current status
@@ -68,6 +100,8 @@ func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
 	if app.currentStatus == nil {
 		// First update - show initial notification
 		app.currentStatus = status
+		app.updateMenuBarIcon()
+		app.rebuildMenu()
 		if err := SendNotification("Memofy", "Monitoring Active", "Automatic meeting detector started"); err != nil {
 			log.Printf("Warning: failed to send notification: %v", err)
 		}
@@ -75,6 +109,12 @@ func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
 	}
 
 	app.currentStatus = status
+
+	// Update menu bar icon
+	app.updateMenuBarIcon()
+
+	// Rebuild menu to reflect current state
+	app.rebuildMenu()
 
 	// Detect recording state change (T085: Display recording duration)
 	// Check actual recording state from OBS, not just connection status
@@ -127,6 +167,104 @@ func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
 		isRecording,
 		duration,
 		status.LastError)
+}
+
+// updateMenuBarIcon updates the menu bar button icon based on status
+func (app *StatusBarApp) updateMenuBarIcon() {
+	if app.currentStatus == nil {
+		return
+	}
+
+	button := app.statusItem.Button()
+	icon := getStatusIcon(app.currentStatus)
+	button.SetTitle(icon)
+}
+
+// rebuildMenu reconstructs the menu based on current status
+func (app *StatusBarApp) rebuildMenu() {
+	app.menu.RemoveAllItems()
+
+	status := app.currentStatus
+	if status == nil {
+		item := appkit.NewMenuItem()
+		item.SetTitle("Loading...")
+		app.menu.AddItem(item)
+		return
+	}
+
+	// Status header
+	isRecording := false
+	if recordingState, ok := status.RecordingState.(map[string]interface{}); ok {
+		if recording, exists := recordingState["recording"]; exists {
+			if recordingBool, ok := recording.(bool); ok {
+				isRecording = recordingBool
+			}
+		}
+	}
+
+	statusText := fmt.Sprintf("Status: %s", getStatusIcon(status))
+	if isRecording {
+		duration := time.Since(app.recordingStartTime)
+		statusText += fmt.Sprintf(" (Recording %.0fs)", duration.Seconds())
+	}
+	statusItem := appkit.NewMenuItem()
+	statusItem.SetTitle(statusText)
+	statusItem.SetEnabled(false)
+	app.menu.AddItem(statusItem)
+
+	app.menu.AddItem(appkit.MenuItem_SeparatorItem())
+
+	// Recording controls
+	if isRecording {
+		stopItem := appkit.NewMenuItem()
+		stopItem.SetTitle("⏹ Stop Recording")
+		app.menu.AddItem(stopItem)
+	} else {
+		startItem := appkit.NewMenuItem()
+		startItem.SetTitle("▶️ Start Recording")
+		app.menu.AddItem(startItem)
+	}
+
+	// Mode selection
+	app.menu.AddItem(appkit.MenuItem_SeparatorItem())
+
+	autoItem := appkit.NewMenuItem()
+	autoItem.SetTitle("🔄 Auto Mode")
+	if status.Mode == ipc.ModeAuto {
+		autoItem.SetState(appkit.OnState)
+	}
+	app.menu.AddItem(autoItem)
+
+	pauseItem := appkit.NewMenuItem()
+	pauseItem.SetTitle("⏸ Pause Detection")
+	if status.Mode == ipc.ModePaused {
+		pauseItem.SetState(appkit.OnState)
+	}
+	app.menu.AddItem(pauseItem)
+
+	// Utilities
+	app.menu.AddItem(appkit.MenuItem_SeparatorItem())
+
+	settingsItem := appkit.NewMenuItem()
+	settingsItem.SetTitle("⚙️ Settings...")
+	app.menu.AddItem(settingsItem)
+
+	logsItem := appkit.NewMenuItem()
+	logsItem.SetTitle("📄 Open Logs")
+	app.menu.AddItem(logsItem)
+
+	checkUpdateItem := appkit.NewMenuItem()
+	checkUpdateItem.SetTitle("🔄 Check for Updates")
+	app.menu.AddItem(checkUpdateItem)
+
+	// Quit
+	app.menu.AddItem(appkit.MenuItem_SeparatorItem())
+	quitItem := appkit.NewMenuItem()
+	quitItem.SetTitle("Quit")
+	quitItem.SetKeyEquivalent("q")
+	quitItem.SetAction(objc.Sel("terminate:"))
+	quitItem.SetTarget(appkit.Application_SharedApplication())
+	app.menu.AddItem(quitItem)
 }
 
 // sendCommand writes a command to the command file
@@ -343,3 +481,5 @@ func (app *StatusBarApp) UpdateNow() {
 		// exec.Command("open", "-a", "Memofy").Run()
 	}()
 }
+
+// Objective-C compatible menu action handlers
