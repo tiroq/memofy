@@ -1,5 +1,4 @@
 package pidfile
-package pidfile
 
 import (
 	"os"
