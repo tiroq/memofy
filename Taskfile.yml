@@ -123,9 +123,14 @@ tasks:
   # Release tasks
   
   release-local:
+    desc: Build release binaries for macOS only (local testing)
+    cmds:
+      - bash scripts/build-release.sh {{.VERSION}} --macos-only
+
+  release-local-all:
     desc: Build release binaries for all platforms (local testing)
     cmds:
-      - bash scripts/build-release.sh
+      - bash scripts/build-release.sh {{.VERSION}} --all-platforms
 
   release-check:
     desc: Check if ready for release (tests, lint, clean git)
