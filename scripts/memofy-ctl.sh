@@ -23,6 +23,47 @@ print_error() {
     echo -e "${RED}✗${NC}  $1"
 }
 
+# Show process logs
+show_logs() {
+    echo ""
+    echo "=== Memofy Process Logs ==="
+    echo ""
+    
+    echo "--- memofy-core (Output) ---"
+    if [ -f /tmp/memofy-core.out.log ]; then
+        tail -20 /tmp/memofy-core.out.log
+    else
+        echo "No output log found"
+    fi
+    
+    echo ""
+    echo "--- memofy-core (Errors) ---"
+    if [ -f /tmp/memofy-core.err.log ]; then
+        tail -20 /tmp/memofy-core.err.log
+    else
+        echo "No error log found"
+    fi
+    
+    echo ""
+    echo "--- memofy-ui (Output) ---"
+    if [ -f /tmp/memofy-ui.out.log ]; then
+        tail -20 /tmp/memofy-ui.out.log
+    else
+        echo "No output log found"
+    fi
+    
+    echo ""
+    echo "Log files:"
+    echo "  /tmp/memofy-core.out.log"
+    echo "  /tmp/memofy-core.err.log"
+    echo "  /tmp/memofy-ui.out.log"
+    echo ""
+    echo "View all logs:"
+    echo "  tail -f /tmp/memofy-core.out.log"
+    echo "  tail -f /tmp/memofy-core.err.log"
+    echo ""
+}
+
 # Stop a memofy process gracefully
 stop_process() {
     local process_name=$1
@@ -177,26 +218,39 @@ case "$COMMAND" in
     status)
         show_status
         ;;
+    logs)
+        show_logs
+        ;;
     clean)
         stop_process "memofy-ui"
         stop_process "memofy-core"
         clean_pids
         ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status|clean} [core|ui]"
+        echo "Usage: $0 {start|stop|restart|status|logs|clean} [core|ui]"
         echo ""
         echo "Commands:"
         echo "  start [core|ui]   - Start memofy processes"
         echo "  stop [core|ui]    - Stop memofy processes gracefully"
         echo "  restart [core|ui] - Restart memofy processes"
         echo "  status            - Show process status"
+        echo "  logs              - Show process logs (last 20 lines)"
         echo "  clean             - Stop all processes and clean PID files"
         echo ""
         echo "Examples:"
         echo "  $0 status          # Show current status"
+        echo "  $0 logs            # Show recent logs"
         echo "  $0 stop ui         # Stop only the UI"
         echo "  $0 restart         # Restart both processes"
         echo "  $0 clean           # Clean everything"
+        echo ""
+        echo "Troubleshooting:"
+        echo "  If core won't start:"
+        echo "    1. Check logs: $0 logs"
+        echo "    2. Ensure OBS is running"
+        echo "    3. Enable WebSocket: OBS > Tools > obs-websocket Settings"
+        echo "    4. Check port 4455 is available"
+        echo ""
         exit 1
         ;;
 esac
