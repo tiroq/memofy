@@ -1,0 +1,355 @@
+version: '3'
+
+vars:
+  BINARY_CORE: memofy-core
+  BINARY_UI: memofy-ui
+  INSTALL_DIR: '{{.HOME}}/.local/bin'
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev"
+  REPO_OWNER: tiroq
+  REPO_NAME: memofy
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  build:
+    desc: Build both core and UI binaries
+    cmds:
+      - task: build-core
+      - task: build-ui
+
+  build-core:
+    desc: Build the core daemon binary
+    sources:
+      - cmd/memofy-core/**/*.go
+      - internal/**/*.go
+      - pkg/**/*.go
+    generates:
+      - build/{{.BINARY_CORE}}
+    cmds:
+      - mkdir -p build
+      - go build -ldflags "-X main.Version={{.VERSION}}" -o build/{{.BINARY_CORE}} ./cmd/memofy-core
+
+  build-ui:
+    desc: Build the menu bar UI binary
+    sources:
+      - cmd/memofy-ui/**/*.go
+      - internal/**/*.go
+      - pkg/**/*.go
+    generates:
+      - build/{{.BINARY_UI}}
+    cmds:
+      - mkdir -p build
+      - go build -ldflags "-X main.Version={{.VERSION}}" -o build/{{.BINARY_UI}} ./cmd/memofy-ui
+
+  install:
+    desc: Install binaries and LaunchAgent
+    deps: [build]
+    cmds:
+      - mkdir -p {{.INSTALL_DIR}}
+      - cp build/{{.BINARY_CORE}} {{.INSTALL_DIR}}/
+      - cp build/{{.BINARY_UI}} {{.INSTALL_DIR}}/
+      - chmod +x {{.INSTALL_DIR}}/{{.BINARY_CORE}}
+      - chmod +x {{.INSTALL_DIR}}/{{.BINARY_UI}}
+      - bash scripts/install-launchagent.sh
+      - echo "✓ Installed to {{.INSTALL_DIR}}"
+
+  uninstall:
+    desc: Uninstall binaries and LaunchAgent
+    cmds:
+      - bash scripts/uninstall.sh
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test -timeout 30s -v ./...
+
+  test-integration:
+    desc: Run integration tests
+    cmds:
+      - go test -timeout 30s -v ./tests/integration/...
+
+  test-coverage:
+    desc: Run tests with coverage report
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - 'echo "Coverage report: coverage.html"'
+
+  lint:
+    desc: Run linter
+    cmds:
+      - |
+        if command -v golangci-lint >/dev/null 2>&1; then
+          golangci-lint run ./...
+        else
+          echo "⚠️  golangci-lint not installed, using go vet instead"
+          echo "💡 Install golangci-lint with: task lint-install"
+          go vet ./...
+        fi
+
+  lint-install:
+    desc: Install golangci-lint
+    cmds:
+      - |
+        if command -v golangci-lint >/dev/null 2>&1; then
+          echo "✓ golangci-lint already installed"
+          golangci-lint version
+        elif command -v brew >/dev/null 2>&1; then
+          echo "→ Installing golangci-lint via Homebrew..."
+          brew install golangci-lint
+        else
+          echo "→ Installing golangci-lint via go install..."
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          echo "✓ Installed golangci-lint to $(go env GOPATH)/bin/golangci-lint"
+          echo "💡 Make sure $(go env GOPATH)/bin is in your PATH"
+        fi
+
+  fmt:
+    desc: Format code
+    cmds:
+      - go fmt ./...
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf build/
+      - rm -rf dist/
+      - rm -f coverage.out coverage.html
+
+  # Release tasks
+  
+  release-local:
+    desc: Build release binaries for all platforms (local testing)
+    cmds:
+      - bash scripts/build-release.sh
+
+  release-check:
+    desc: Check if ready for release (tests, lint, clean git)
+    cmds:
+      - echo "→ Running tests..."
+      - task: test
+      - echo "→ Running linter..."
+      - task: lint
+      - echo "→ Checking git status..."
+      - |
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "❌ Git working directory is not clean. Commit or stash changes."
+          exit 1
+        fi
+      - echo "→ Checking git branch..."
+      - |
+        BRANCH=$(git rev-parse --abbrev-ref HEAD)
+        if [ "$BRANCH" != "main" ]; then
+          echo "⚠️  Warning: Not on main branch (currently on $BRANCH)"
+        fi
+      - echo "✓ Ready for release"
+
+  release-tag:
+    desc: 'Create and push a release tag (usage: task release-tag VERSION=v0.2.0)'
+    deps: [release-check]
+    preconditions:
+      - sh: '[ -n "{{.VERSION}}" ]'
+        msg: 'VERSION variable is required. Usage: task release-tag VERSION=v0.2.0'
+      - sh: 'echo "{{.VERSION}}" | grep -qE "^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$"'
+        msg: 'VERSION must follow semantic versioning: v0.2.0 or v0.2.0-rc1'
+    cmds:
+      - echo "→ Creating tag {{.VERSION}}..."
+      - git tag -a {{.VERSION}} -m "Release {{.VERSION}}"
+      - echo "→ Pushing tag to GitHub..."
+      - git push origin main {{.VERSION}}
+      - echo "✓ Tag {{.VERSION}} created and pushed"
+      - echo "✓ GitHub Actions will now build and publish the release"
+      - 'echo "→ View workflow: https://github.com/{{.REPO_OWNER}}/{{.REPO_NAME}}/actions"'
+
+  release-stable:
+    desc: 'Create and push a stable release tag (usage: task release-stable VERSION=0.2.0)'
+    vars:
+      TAG: v{{.VERSION}}
+    cmds:
+      - task: release-tag
+        vars:
+          VERSION: '{{.TAG}}'
+
+  release-rc:
+    desc: 'Create and push a release candidate tag (usage: task release-rc VERSION=0.2.0 RC=1)'
+    vars:
+      TAG: v{{.VERSION}}-rc{{.RC | default "1"}}
+    cmds:
+      - task: release-tag
+        vars:
+          VERSION: '{{.TAG}}'
+
+  release-beta:
+    desc: 'Create and push a beta release tag (usage: task release-beta VERSION=0.2.0 BETA=1)'
+    vars:
+      TAG: v{{.VERSION}}-beta{{.BETA | default "1"}}
+    cmds:
+      - task: release-tag
+        vars:
+          VERSION: '{{.TAG}}'
+
+  release-alpha:
+    desc: 'Create and push an alpha release tag (usage: task release-alpha VERSION=0.2.0 ALPHA=1)'
+    vars:
+      TAG: v{{.VERSION}}-alpha{{.ALPHA | default "1"}}
+    cmds:
+      - task: release-tag
+        vars:
+          VERSION: '{{.TAG}}'
+
+  release-delete:
+    desc: 'Delete a release tag (local and remote) (usage: task release-delete VERSION=v0.2.0)'
+    preconditions:
+      - sh: '[ -n "{{.VERSION}}" ]'
+        msg: 'VERSION variable is required. Usage: task release-delete VERSION=v0.2.0'
+    cmds:
+      - echo "→ Deleting local tag {{.VERSION}}..."
+      - git tag -d {{.VERSION}} || true
+      - echo "→ Deleting remote tag {{.VERSION}}..."
+      - git push origin :{{.VERSION}} || true
+      - echo "✓ Tag {{.VERSION}} deleted"
+
+  release-list:
+    desc: List all tags/releases
+    cmds:
+      - 'echo "All tags:"'
+      - git tag -l | sort -V
+
+  release-status:
+    desc: Check GitHub Actions workflow status
+    cmds:
+      - 'echo "Recent workflow runs:"'
+      - gh run list --limit 5 || echo "Install GitHub CLI (gh) to view workflow status"
+
+  # Development tasks
+
+  dev-daemon:
+    desc: Run daemon in foreground for development
+    cmds:
+      - go run ./cmd/memofy-core
+
+  dev-ui:
+    desc: Run UI in foreground for development
+    cmds:
+      - go run ./cmd/memofy-ui
+
+  dev-watch:
+    desc: Watch for changes and rebuild
+    cmds:
+      - |
+        echo "Watching for changes... (press Ctrl+C to stop)"
+        while true; do
+          inotifywait -r -e modify ./cmd ./internal ./pkg 2>/dev/null || fswatch -o ./cmd ./internal ./pkg | read
+          echo "→ Rebuilding..."
+          task build
+        done
+
+  # Utility tasks
+
+  deps:
+    desc: Download and verify dependencies
+    cmds:
+      - go mod download
+      - go mod verify
+
+  deps-update:
+    desc: Update dependencies
+    cmds:
+      - go get -u ./...
+      - go mod tidy
+
+  deps-vendor:
+    desc: Vendor dependencies
+    cmds:
+      - go mod vendor
+
+  logs:
+    desc: View daemon logs
+    cmds:
+      - tail -f /tmp/memofy-core.out.log
+
+  logs-ui:
+    desc: View UI logs
+    cmds:
+      - tail -f ~/.cache/memofy/memofy-ui.log
+
+  logs-error:
+    desc: View daemon error logs
+    cmds:
+      - tail -f /tmp/memofy-core.err.log
+
+  status:
+    desc: Check daemon and UI status
+    cmds:
+      - 'echo "→ LaunchAgent status:"'
+      - launchctl list | grep memofy || echo "  Not running"
+      - echo ""
+      - 'echo "→ Process status:"'
+      - ps aux | grep memofy | grep -v grep || echo "  No processes found"
+      - echo ""
+      - 'echo "→ Binary locations:"'
+      - ls -la {{.INSTALL_DIR}}/memofy-* 2>/dev/null || echo "  Not installed"
+
+  restart:
+    desc: Restart daemon and UI
+    cmds:
+      - launchctl unload ~/Library/LaunchAgents/com.memofy.core.plist 2>/dev/null || true
+      - sleep 1
+      - launchctl load ~/Library/LaunchAgents/com.memofy.core.plist
+      - echo "✓ Daemon restarted"
+
+  stop:
+    desc: Stop daemon
+    cmds:
+      - launchctl unload ~/Library/LaunchAgents/com.memofy.core.plist 2>/dev/null || true
+      - echo "✓ Daemon stopped"
+
+  start:
+    desc: Start daemon
+    cmds:
+      - launchctl load ~/Library/LaunchAgents/com.memofy.core.plist
+      - echo "✓ Daemon started"
+
+  # CI/CD simulation tasks
+
+  ci-test:
+    desc: Simulate CI test workflow
+    cmds:
+      - task: fmt
+      - task: lint
+      - task: test
+      - task: test-integration
+
+  ci-build:
+    desc: Simulate CI build workflow
+    cmds:
+      - task: build
+      - echo "✓ Build successful"
+
+  # Quick install
+
+  quick-install:
+    desc: Run quick install script
+    cmds:
+      - bash scripts/quick-install.sh
+
+  # Documentation tasks
+
+  docs-serve:
+    desc: Serve documentation locally
+    cmds:
+      - 'echo "Documentation files:"'
+      - ls -1 docs/*.md
+      - echo ""
+      - echo "Open in browser or use a markdown viewer"
+
+  docs-check:
+    desc: Check documentation links
+    cmds:
+      - |
+        echo "Checking for broken links in documentation..."
+        find docs -name "*.md" -exec grep -H "\.md" {} \; | grep -v "http" || echo "No local markdown links found"
