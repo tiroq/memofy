@@ -10,9 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/progrium/darwinkit/macos/appkit"
-	"github.com/progrium/darwinkit/macos/foundation"
-	"github.com/progrium/darwinkit/objc"
 	"github.com/tiroq/memofy/internal/config"
 )
 
@@ -104,8 +101,11 @@ func (sw *SettingsWindow) ShowSettingsForm() error {
 func (sw *SettingsWindow) showSimpleSettingsDialog() error {
 	// Create settings window with proper UI
 	return sw.showNativeSettingsWindow()
-}Create a comprehensive settings window using AppleScript for simplicity
-	// This allows for a scrollable form with all settings
+}
+
+// showDetailedSettingsDialog creates a comprehensive settings window using AppleScript for simplicity
+// This allows for a scrollable form with all settings
+func (sw *SettingsWindow) showDetailedSettingsDialog() error {
 	configPath := filepath.Join(os.Getenv("HOME"), ".config", "memofy", "detection-rules.json")
 
 	// Ensure config exists
@@ -337,11 +337,7 @@ end tell
 		pollInterval, startThresh, stopThresh, allowDev)
 
 	if err := SendNotification("Memofy", "Settings Updated", "Detection rules saved successfully"); err != nil {
-		log.Printf("Warning: failed to send notification: %v", err)se "finder":
-		// Show in Finder
-		if err := exec.Command("open", "-R", configPath).Run(); err != nil {
-			log.Printf("Failed to show config in Finder: %v", err)
-		}
+		log.Printf("Warning: failed to send notification: %v", err)
 	}
 
 	return nil
