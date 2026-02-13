@@ -37,12 +37,12 @@ func (pd *ProcessDetection) IsProcessRunning(processPatterns []string) (bool, st
 		// Check if bundle ID or localized name matches any pattern
 		for _, pattern := range processPatterns {
 			patternLower := strings.ToLower(pattern)
-			
+
 			// Check bundle ID
 			if bundleID != "" && strings.Contains(strings.ToLower(bundleID), patternLower) {
 				return true, bundleID
 			}
-			
+
 			// Check localized name
 			if localizedName != "" && strings.Contains(strings.ToLower(localizedName), patternLower) {
 				return true, localizedName
