@@ -98,23 +98,55 @@ func (sw *SettingsWindow) ShowSettingsForm() error {
 
 // showSimpleSettingsDialog shows a basic settings dialog
 func (sw *SettingsWindow) showSimpleSettingsDialog() error {
-	// Create AppleScript to show settings options
-	script := `
+	// Create settings window with proper UI
+	return sw.showNativeSettingsWindow()
+}
+
+// showNativeSettingsWindow creates a native macOS settings window
+func (sw *SettingsWindow) showNativeSettingsWindow() error {
+	// Show settings in system text editor for now (user can edit JSON)
+	configPath := filepath.Join(os.Getenv("HOME"), ".config", "memofy", "detection-rules.json")
+
+	// Ensure config exists
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if err := config.SaveDetectionRules(sw.detectionRules); err != nil {
+			log.Printf("Failed to create config: %v", err)
+			return err
+		}
+	}
+
+	// Show current settings info
+	info := sw.GetCurrentSettings()
+	script := fmt.Sprintf(`
 tell application "System Events"
 	activate
-	set settingsChoice to choose from list {"Edit Detection Rules", "View Current Settings", "Reset to Defaults"} with title "Memofy Settings" with prompt "Select an option:"
+	set settingsChoice to button returned of (display dialog "%s\n\nWould you like to:" buttons {"Edit Config File", "View in Finder", "Cancel"} default button "Edit Config File" with title "Memofy Settings")
 	
-	if settingsChoice is not false then
-		display notification (item 1 of settingsChoice) with title "Memofy" subtitle "Coming soon"
+	if settingsChoice is "Edit Config File" then
+		return "edit"
+	else if settingsChoice is "View in Finder" then
+		return "finder"
+	else
+		return "cancel"
 	end if
 end tell
-`
+`, escapeAppleScript(info))
 
 	cmd := exec.Command("osascript", "-e", script)
-	err := cmd.Run()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("Settings dialog error: %v", err)
-		return nil // Don't treat cancellation as error
+		log.Printf("Settings dialog dismissed: %v", err)
+		return nil
+	}
+
+	choice := strings.TrimSpace(string(output))
+	switch choice {
+	case "edit":
+		// Open in default text editor
+		exec.Command("open", "-e", configPath).Run()
+	case "finder":
+		// Show in Finder
+		exec.Command("open", "-R", configPath).Run()
 	}
 
 	return nil
