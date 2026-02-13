@@ -15,6 +15,7 @@ import (
 	"github.com/tiroq/memofy/internal/fileutil"
 	"github.com/tiroq/memofy/internal/ipc"
 	"github.com/tiroq/memofy/internal/obsws"
+	"github.com/tiroq/memofy/internal/pidfile"
 	"github.com/tiroq/memofy/internal/statemachine"
 )
 
@@ -48,6 +49,18 @@ func main() {
 	}
 
 	outLog.Println("Starting Memofy Core v" + Version + "...")
+
+	// Check for duplicate instances
+	pidFilePath := pidfile.GetPIDFilePath("memofy-core")
+	pf, err := pidfile.New(pidFilePath)
+	if err != nil {
+		errLog.Printf("Failed to create PID file: %v", err)
+		errLog.Println("Another instance of memofy-core may already be running.")
+		errLog.Printf("If you're sure no other instance is running, remove: %s", pidFilePath)
+		os.Exit(1)
+	}
+	defer pf.Remove()
+	outLog.Printf("PID file created: %s (PID %d)", pidFilePath, os.Getpid())
 
 	// Check macOS permissions
 	if err := checkPermissions(); err != nil {

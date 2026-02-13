@@ -9,6 +9,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/progrium/darwinkit/macos/appkit"
 	"github.com/tiroq/memofy/internal/ipc"
+	"github.com/tiroq/memofy/internal/pidfile"
 	"github.com/tiroq/memofy/pkg/macui"
 )
 
@@ -21,6 +22,18 @@ var (
 
 func main() {
 	log.Println("Memofy UI starting (version " + Version + ")...")
+
+	// Check for duplicate instances
+	pidFilePath := pidfile.GetPIDFilePath("memofy-ui")
+	pf, err := pidfile.New(pidFilePath)
+	if err != nil {
+		log.Printf("Failed to create PID file: %v", err)
+		log.Println("Another instance of memofy-ui may already be running.")
+		log.Printf("If you're sure no other instance is running, remove: %s", pidFilePath)
+		os.Exit(1)
+	}
+	defer pf.Remove()
+	log.Printf("PID file created: %s (PID %d)", pidFilePath, os.Getpid())
 
 	// Initialize macOS application
 	app := appkit.Application_SharedApplication()
