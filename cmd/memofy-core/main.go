@@ -597,8 +597,25 @@ func checkPermissions() error {
 	// - AXIsProcessTrusted() for Accessibility
 
 	// In production, these would call into darwinkit/macos APIs
-	outLog.Println("Permission check: Screen Recording - OK (assumed)")
-	outLog.Println("Permission check: Accessibility - OK (assumed)")
+	outLog.Println("[PERMS] Screen Recording - OK (assumed)")
+	outLog.Println("[PERMS] Accessibility - OK (assumed)")
+
+	// Try to detect if we have actual permissions by checking a runtime probe
+	pwd, err := os.Getwd()
+	if err != nil {
+		outLog.Printf("[PERMS] WARNING: Could not get working directory: %v", err)
+	} else {
+		outLog.Printf("[PERMS] Working directory: %s", pwd)
+	}
+
+	// Check if we can write to temp directory
+	testFile := filepath.Join("/tmp", ".memofy-core-test")
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		outLog.Printf("[PERMS] WARNING: Cannot write to /tmp: %v", err)
+	} else {
+		_ = os.Remove(testFile)
+		outLog.Println("[PERMS] Write test to /tmp: PASS")
+	}
 
 	return nil
 }
