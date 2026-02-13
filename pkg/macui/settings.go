@@ -103,9 +103,9 @@ func (sw *SettingsWindow) showSimpleSettingsDialog() error {
 	return sw.showNativeSettingsWindow()
 }
 
-// showDetailedSettingsDialog creates a comprehensive settings window using AppleScript for simplicity
+// showNativeSettingsWindow creates a comprehensive settings window using AppleScript for simplicity
 // This allows for a scrollable form with all settings
-func (sw *SettingsWindow) showDetailedSettingsDialog() error {
+func (sw *SettingsWindow) showNativeSettingsWindow() error {
 	configPath := filepath.Join(os.Getenv("HOME"), ".config", "memofy", "detection-rules.json")
 
 	// Ensure config exists
