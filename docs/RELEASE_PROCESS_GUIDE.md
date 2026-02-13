@@ -38,6 +38,7 @@ The task automatically:
 - ✅ Creates the tag
 - ✅ Pushes to GitHub
 - ✅ Triggers GitHub Actions
+- ✅ Verifies the Release workflow succeeded (mandatory)
 
 See [Taskfile Guide](TASKFILE_GUIDE.md) for complete details.
 
@@ -155,6 +156,9 @@ task release-stable VERSION=0.2.0
 # Or pre-release
 task release-rc VERSION=0.2.0 RC=1
 ```
+
+**Note**: Release tags now require CI verification. If the Release workflow fails,
+the task exits with a non-zero status and opens the failed run (if `gh` is installed).
 
 **3. Monitor:**
 ```bash
