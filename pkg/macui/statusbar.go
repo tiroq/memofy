@@ -281,15 +281,21 @@ func (app *StatusBarApp) rebuildMenu() {
 func (app *StatusBarApp) checkForUpdates(sender objc.Object) {
 	available, version, err := app.CheckForUpdates()
 	if err != nil {
-		SendErrorNotification("Update Check Failed", err.Error())
+		if notifErr := SendErrorNotification("Update Check Failed", err.Error()); notifErr != nil {
+			log.Printf("Failed to send error notification: %v", notifErr)
+		}
 		return
 	}
 	if available {
 		msg := fmt.Sprintf("Version %s is available. Would you like to update?", version)
-		SendNotification("Memofy", "Update Available", msg)
+		if notifErr := SendNotification("Memofy", "Update Available", msg); notifErr != nil {
+			log.Printf("Failed to send notification: %v", notifErr)
+		}
 		app.UpdateNow()
 	} else {
-		SendNotification("Memofy", "Up to Date", "You have the latest version")
+		if notifErr := SendNotification("Memofy", "Up to Date", "You have the latest version"); notifErr != nil {
+			log.Printf("Failed to send notification: %v", notifErr)
+		}
 	}
 }
 

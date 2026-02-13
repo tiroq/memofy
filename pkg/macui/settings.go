@@ -143,10 +143,14 @@ end tell
 	switch choice {
 	case "edit":
 		// Open in default text editor
-		exec.Command("open", "-e", configPath).Run()
+		if err := exec.Command("open", "-e", configPath).Run(); err != nil {
+			log.Printf("Failed to open config in editor: %v", err)
+		}
 	case "finder":
 		// Show in Finder
-		exec.Command("open", "-R", configPath).Run()
+		if err := exec.Command("open", "-R", configPath).Run(); err != nil {
+			log.Printf("Failed to show config in Finder: %v", err)
+		}
 	}
 
 	return nil
