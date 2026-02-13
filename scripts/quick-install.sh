@@ -218,13 +218,22 @@ install_assets() {
     local assets_dir="$HOME/.local/share/memofy"
     mkdir -p "$assets_dir"
     
-    # Copy logo if available
+    # Copy logo if available locally (source install)
     if [ -f "docs/memofy.png" ]; then
         cp docs/memofy.png "$assets_dir/logo.png"
-        print_success "Logo installed"
+        print_success "Logo installed from source"
     elif [ -f "docs/memofy.svg" ]; then
         cp docs/memofy.svg "$assets_dir/logo.svg"
-        print_success "Logo installed"
+        print_success "Logo installed from source"
+    else
+        # Download logo from GitHub (release install)
+        local logo_url="https://raw.githubusercontent.com/tiroq/memofy/main/docs/memofy_logo.png"
+        print_info "Downloading logo from GitHub..."
+        if curl -fsSL "$logo_url" -o "$assets_dir/logo.png" 2>/dev/null; then
+            print_success "Logo installed from GitHub"
+        else
+            print_warn "Logo download failed (non-critical)"
+        fi
     fi
 }
 
