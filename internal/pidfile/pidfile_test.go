@@ -17,7 +17,11 @@ func TestNewPIDFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create PID file: %v", err)
 	}
-	defer pf.Remove()
+	defer func() {
+		if err := pf.Remove(); err != nil {
+			t.Logf("Warning: failed to remove PID file: %v", err)
+		}
+	}()
 
 	// Verify PID file exists
 	if _, err := os.Stat(pidPath); os.IsNotExist(err) {
@@ -50,7 +54,11 @@ func TestDuplicateInstance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create first PID file: %v", err)
 	}
-	defer pf1.Remove()
+	defer func() {
+		if err := pf1.Remove(); err != nil {
+			t.Logf("Warning: failed to remove PID file: %v", err)
+		}
+	}()
 
 	// Try to create second PID file (should fail)
 	_, err = New(pidPath)

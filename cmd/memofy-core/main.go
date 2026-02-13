@@ -59,7 +59,11 @@ func main() {
 		errLog.Printf("If you're sure no other instance is running, remove: %s", pidFilePath)
 		os.Exit(1)
 	}
-	defer pf.Remove()
+	defer func() {
+		if err := pf.Remove(); err != nil {
+			errLog.Printf("Warning: failed to remove PID file: %v", err)
+		}
+	}()
 	outLog.Printf("PID file created: %s (PID %d)", pidFilePath, os.Getpid())
 
 	// Check macOS permissions
