@@ -211,6 +211,23 @@ install_binaries() {
     print_success "Binaries installed to $INSTALL_DIR"
 }
 
+# Install logo and assets
+install_assets() {
+    print_info "Installing assets..."
+    
+    local assets_dir="$HOME/.local/share/memofy"
+    mkdir -p "$assets_dir"
+    
+    # Copy logo if available
+    if [ -f "docs/memofy.png" ]; then
+        cp docs/memofy.png "$assets_dir/logo.png"
+        print_success "Logo installed"
+    elif [ -f "docs/memofy.svg" ]; then
+        cp docs/memofy.svg "$assets_dir/logo.svg"
+        print_success "Logo installed"
+    fi
+}
+
 # Install config and LaunchAgent
 install_config() {
     print_info "Installing configuration..."
@@ -467,6 +484,7 @@ main() {
     # Install binaries
     install_binaries "$CORE_BINARY" "$UI_BINARY"
     install_config
+    install_assets
     echo ""
     
     # Setup permissions
