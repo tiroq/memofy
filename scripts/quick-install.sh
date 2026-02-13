@@ -366,14 +366,19 @@ setup_obs() {
 start_ui() {
     print_info "Starting Memofy menu bar UI..."
     
-    # Kill any existing instances gracefully (SIGTERM allows defer cleanup)
-    if pgrep -q memofy-ui; then
-        killall memofy-ui 2>/dev/null || true
-        sleep 2  # Wait for graceful shutdown
+    # Use helper script if available for better process management
+    if [ -f "scripts/memofy-ctl.sh" ]; then
+        bash scripts/memofy-ctl.sh stop ui
+    else
+        # Kill any existing instances gracefully (SIGTERM allows defer cleanup)
+        if pgrep -q memofy-ui; then
+            killall memofy-ui 2>/dev/null || true
+            sleep 2  # Wait for graceful shutdown
+        fi
+        
+        # Clean up any remaining PID files (in case of forced kill)
+        rm -f "$HOME/.cache/memofy/memofy-ui.pid" 2>/dev/null || true
     fi
-    
-    # Clean up any remaining PID files (in case of forced kill)
-    rm -f "$HOME/.cache/memofy/memofy-ui.pid" 2>/dev/null || true
     
     # Start daemon if not running
     launchctl start com.memofy.core 2>/dev/null || true
