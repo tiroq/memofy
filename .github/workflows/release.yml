@@ -67,11 +67,13 @@ jobs:
           go build -o "bin/memofy-core-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-core/main.go
 
       - name: Build memofy-ui
+        # memofy-ui is macOS-only (uses darwinkit)
+        if: matrix.goos == 'darwin'
         shell: bash
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: ${{ matrix.goos == 'darwin' && '1' || '0' }}
+          CGO_ENABLED: '1'
         run: |
           mkdir -p bin
           go build -o "bin/memofy-ui-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-ui/main.go
@@ -81,7 +83,10 @@ jobs:
         run: |
           mkdir -p "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
           cp bin/memofy-core-* "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy-core"
-          cp bin/memofy-ui-* "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy-ui"
+          # Only include memofy-ui for macOS builds
+          if [ "${{ matrix.goos }}" = "darwin" ]; then
+            cp bin/memofy-ui-* "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy-ui"
+          fi
           cp README.md LICENSE "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" || true
           cp -r configs scripts "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" || true
           tar czf "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" \
@@ -94,7 +99,7 @@ jobs:
         run: |
           mkdir "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
           Copy-Item "bin/memofy-core-*" -Destination "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy-core.exe"
-          Copy-Item "bin/memofy-ui-*" -Destination "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy-ui.exe"
+          # Note: memofy-ui is macOS-only and not built for Windows
           Copy-Item "README.md", "LICENSE" -Destination "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" -ErrorAction SilentlyContinue
           Copy-Item "configs", "scripts" -Destination "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" -Recurse -ErrorAction SilentlyContinue
           Compress-Archive -Path "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}" `
