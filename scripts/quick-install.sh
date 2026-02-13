@@ -219,15 +219,72 @@ install_config() {
     if [ ! -f "$CONFIG_DIR/detection-rules.json" ]; then
         if [ -f "configs/default-detection-rules.json" ]; then
             cp configs/default-detection-rules.json "$CONFIG_DIR/detection-rules.json"
+        else
+            # Create minimal default config if source not available
+            cat > "$CONFIG_DIR/detection-rules.json" << 'EOF'
+{
+  "rules": [
+    {
+      "application": "zoom",
+      "process_names": ["zoom.us"],
+      "window_hints": ["Zoom Meeting"],
+      "enabled": true
+    },
+    {
+      "application": "teams",
+      "process_names": ["Microsoft Teams"],
+      "window_hints": ["Meeting", "Call"],
+      "enabled": true
+    },
+    {
+      "application": "meet",
+      "process_names": ["Google Chrome", "Safari", "Firefox", "Microsoft Edge", "Brave Browser"],
+      "window_hints": ["Google Meet", "meet.google.com"],
+      "enabled": true
+    }
+  ],
+  "start_threshold": 3,
+  "stop_threshold": 6,
+  "poll_interval": 2000
+}
+EOF
+            print_success "Created default configuration"
         fi
     fi
     
-    # Install LaunchAgent
+    # Install LaunchAgent (create plist if source not available)
+    local plist_path="$LAUNCHAGENTS_DIR/com.memofy.core.plist"
     if [ -f "scripts/com.memofy.core.plist" ]; then
-        sed "s|INSTALL_DIR|$INSTALL_DIR|g" scripts/com.memofy.core.plist > "$LAUNCHAGENTS_DIR/com.memofy.core.plist"
-        launchctl load "$LAUNCHAGENTS_DIR/com.memofy.core.plist" 2>/dev/null || true
-        print_success "LaunchAgent installed and loaded"
+        sed "s|INSTALL_DIR|$INSTALL_DIR|g" scripts/com.memofy.core.plist > "$plist_path"
+    else
+        # Create LaunchAgent plist
+        cat > "$plist_path" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.memofy.core</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$INSTALL_DIR/memofy-core</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/memofy-core.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/memofy-core.err.log</string>
+</dict>
+</plist>
+EOF
     fi
+    
+    launchctl unload "$plist_path" 2>/dev/null || true
+    launchctl load "$plist_path" 2>/dev/null || true
+    print_success "LaunchAgent installed and loaded"
     
     print_success "Configuration installed"
 }
@@ -286,11 +343,19 @@ start_ui() {
     # Start daemon if not running
     launchctl start com.memofy.core 2>/dev/null || true
     
-    # Start UI in background
-    "$INSTALL_DIR/memofy-ui" &
+    # Start UI with proper GUI context for menu bar
+    # Using nohup and redirecting output to allow menu bar access
+    nohup "$INSTALL_DIR/memofy-ui" > /tmp/memofy-ui.out.log 2>&1 &
     
-    sleep 1
-    print_success "Memofy is running in menu bar"
+    sleep 2
+    
+    # Verify it's running
+    if pgrep -q memofy-ui; then
+        print_success "Memofy is running in menu bar"
+    else
+        print_warn "Menu bar UI started, but may need manual launch"
+        echo "  Run manually: ~/.local/bin/memofy-ui"
+    fi
 }
 
 # Parse arguments
