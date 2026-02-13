@@ -87,31 +87,35 @@ func main() {
 	outLog.Printf("PID file created: %s (PID %d)", pidFilePath, os.Getpid())
 
 	// Check macOS permissions
+	outLog.Println("[STARTUP] Checking macOS permissions...")
 	if err := checkPermissions(); err != nil {
 		errLog.Printf("Permission check failed: %v", err)
 		errLog.Println("Please grant Screen Recording and Accessibility permissions in System Preferences > Security & Privacy")
 		os.Exit(1)
 	}
+	outLog.Println("[STARTUP] Permissions check passed")
 
 	// Load detection configuration
+	outLog.Println("[STARTUP] Loading detection configuration...")
 	cfg, err := config.LoadDetectionRules()
 	if err != nil {
 		errLog.Printf("Failed to load detection config: %v", err)
 		os.Exit(1)
 	}
-	outLog.Printf("Loaded detection config: %d rules, poll_interval=%ds, thresholds=%d/%d",
+	outLog.Printf("[STARTUP] Loaded detection config: %d rules, poll_interval=%ds, thresholds=%d/%d",
 		len(cfg.Rules), cfg.PollInterval, cfg.StartThreshold, cfg.StopThreshold)
 
 	// Initialize OBS - auto-start if needed
-	outLog.Println("Checking OBS status...")
+	outLog.Println("[STARTUP] Checking OBS status...")
 	if err := obsws.StartOBSIfNeeded(); err != nil {
-		errLog.Printf("Failed to start OBS: %v (continuing anyway)", err)
+		errLog.Printf("[STARTUP] Failed to start OBS: %v (continuing anyway)", err)
 	}
 
 	// Initialize OBS WebSocket client
+	outLog.Println("[STARTUP] Connecting to OBS WebSocket at " + obsWebSocketURL + "...")
 	obsClient := obsws.NewClient(obsWebSocketURL, obsPassword)
 	if err := obsClient.Connect(); err != nil {
-		errLog.Printf("Failed to connect to OBS: %v", err)
+		errLog.Printf("[STARTUP] Failed to connect to OBS: %v", err)
 		errLog.Println("Please ensure OBS is running and WebSocket server is enabled")
 		errLog.Println("  1. Open OBS Studio")
 		errLog.Println("  2. Go to Tools > obs-websocket Settings")
@@ -119,39 +123,47 @@ func main() {
 		errLog.Println("  4. Set port to 4455 (default)")
 		os.Exit(1)
 	}
-	defer obsClient.Disconnect()
+	outLog.Println("[STARTUP] Successfully connected to OBS, setting up deferred cleanup...")
+	defer func() {
+		outLog.Println("[SHUTDOWN] Disconnecting from OBS...")
+		obsClient.Disconnect()
+	}()
 
 	obsVersion, wsVersion, _ := obsClient.GetVersion()
-	outLog.Printf("Connected to OBS %s (WebSocket %s)", obsVersion, wsVersion)
+	outLog.Printf("[STARTUP] Connected to OBS %s (WebSocket %s)", obsVersion, wsVersion)
 
 	// Validate and create required sources (audio + display capture)
-	outLog.Println("Checking OBS recording sources...")
+	outLog.Println("[STARTUP] Checking OBS recording sources...")
 	if err := obsClient.EnsureRequiredSources(); err != nil {
 		errLog.Printf("Warning: Could not ensure sources: %v", err)
 		errLog.Println("  This may cause black/silent recordings")
 		errLog.Println("  Please manually add Display Capture and Audio Input sources to your scene")
 	} else {
-		outLog.Println("OBS recording sources validated (audio + display capture ready)")
+		outLog.Println("[STARTUP] OBS recording sources validated (audio + display capture ready)")
 	}
 
 	// Set up event handlers
+	outLog.Println("[STARTUP] Setting up OBS event handlers...")
 	obsClient.OnRecordStateChanged(func(recording bool) {
 		if recording {
-			outLog.Println("OBS recording state changed: STARTED")
+			outLog.Println("[EVENT] OBS recording state changed: STARTED")
 		} else {
-			outLog.Println("OBS recording state changed: STOPPED")
+			outLog.Println("[EVENT] OBS recording state changed: STOPPED")
 		}
 	})
 
 	obsClient.OnDisconnected(func() {
-		errLog.Println("OBS disconnected - will attempt reconnection")
+		errLog.Println("[EVENT] OBS disconnected - will attempt reconnection")
 	})
+	outLog.Println("[STARTUP] Event handlers registered")
 
 	// Initialize state machine
+	outLog.Println("[STARTUP] Initializing state machine...")
 	stateMachine := statemachine.NewStateMachine(cfg)
-	outLog.Printf("State machine initialized in %s mode", stateMachine.CurrentMode())
+	outLog.Printf("[STARTUP] State machine initialized in %s mode", stateMachine.CurrentMode())
 
 	// Initialize status directory
+	outLog.Println("[STARTUP] Creating status directory...")
 	statusDir := filepath.Join(os.Getenv("HOME"), ".cache", "memofy")
 	if err := os.MkdirAll(statusDir, 0755); err != nil {
 		errLog.Printf("Failed to create status directory: %v", err)
@@ -159,11 +171,13 @@ func main() {
 	}
 
 	// Write initial status
+	outLog.Println("[STARTUP] Writing initial status...")
 	if err := writeStatus(stateMachine, &detector.DetectionState{}, obsClient); err != nil {
 		errLog.Printf("Failed to write initial status: %v", err)
 	}
 
 	// Start command file watcher
+	outLog.Println("[STARTUP] Starting command file watcher...")
 	go watchCommands(stateMachine, obsClient)
 
 	// Main detection loop
@@ -173,8 +187,11 @@ func main() {
 	// Signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	outLog.Println("[STARTUP] Signal handlers registered (SIGINT, SIGTERM)")
 
-	outLog.Printf("Starting detection loop (polling every %ds)...", cfg.PollInterval)
+	outLog.Printf("[STARTUP] Starting detection loop (polling every %ds)...", cfg.PollInterval)
+	outLog.Println("===========================================")
+	outLog.Println("[RUNNING] Memofy Core is running and monitoring")
 
 	for {
 		select {
@@ -209,15 +226,17 @@ func main() {
 			}
 
 		case <-sigChan:
-			outLog.Println("Received shutdown signal")
+			outLog.Println("===========================================")
+			outLog.Printf("[SHUTDOWN] Received shutdown signal at %s", time.Now().Format(time.RFC3339))
 
 			// Stop recording if active
 			if stateMachine.IsRecording() {
-				outLog.Println("Stopping active recording before shutdown...")
+				outLog.Println("[SHUTDOWN] Recording is active - stopping before shutdown...")
 				handleStopRecording(stateMachine, obsClient)
 			}
 
-			outLog.Println("Shutting down gracefully")
+			outLog.Println("[SHUTDOWN] Shutting down gracefully")
+			outLog.Println("===========================================")
 			return
 		}
 	}
