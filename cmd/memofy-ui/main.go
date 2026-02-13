@@ -47,7 +47,9 @@ func main() {
 	go func() {
 		sig := <-sigChan
 		log.Printf("Received signal %v, cleaning up...", sig)
-		pf.Remove()
+		if err := pf.Remove(); err != nil {
+			log.Printf("Warning: failed to remove PID file: %v", err)
+		}
 		os.Exit(0)
 	}()
 
