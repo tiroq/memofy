@@ -110,15 +110,25 @@ download_release_binary() {
     
     print_info "Downloading Memofy v$version..."
     
-    # Detect architecture
+    # Detect OS and architecture
+    local os_type
+    case "$OS" in
+        Darwin) os_type="darwin" ;;
+        Linux) os_type="linux" ;;
+        *)
+            print_error "Unsupported OS: $OS"
+            return 1
+            ;;
+    esac
+    
     local arch=$(normalize_arch)
     if [ "$arch" != "amd64" ] && [ "$arch" != "arm64" ]; then
         print_error "Unsupported architecture: $arch"
         return 1
     fi
     
-    # Asset name format: memofy-VERSION-darwin-ARCH.zip
-    local asset_name="memofy-${version}-darwin-${arch}.zip"
+    # Asset name format: memofy-VERSION-OS-ARCH.tar.gz
+    local asset_name="memofy-${version}-${os_type}-${arch}.tar.gz"
     local download_url="$RELEASES_URL/v$version/$asset_name"
     local temp_file="/tmp/$asset_name"
     
@@ -129,7 +139,7 @@ download_release_binary() {
     
     # Extract to output directory
     mkdir -p "$output_dir"
-    if ! unzip -oq "$temp_file" -d "$output_dir"; then
+    if ! tar -xzf "$temp_file" -C "$output_dir"; then
         print_error "Failed to extract archive"
         rm -f "$temp_file"
         return 1
@@ -138,7 +148,7 @@ download_release_binary() {
     rm -f "$temp_file"
     
     # Find the extracted binaries
-    local extracted_dir="$output_dir/memofy-${version}-darwin-${arch}"
+    local extracted_dir="$output_dir/memofy-${version}-${os_type}-${arch}"
     if [ -f "$extracted_dir/memofy-core" ] && [ -f "$extracted_dir/memofy-ui" ]; then
         print_success "Downloaded and extracted Memofy v$version"
         echo "$extracted_dir/memofy-core"
