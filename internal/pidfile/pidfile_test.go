@@ -87,7 +87,11 @@ func TestStalePIDFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create PID file after removing stale one: %v", err)
 	}
-	defer pf.Remove()
+	defer func() {
+		if err := pf.Remove(); err != nil {
+			t.Logf("Warning: failed to remove PID file: %v", err)
+		}
+	}()
 
 	// Verify PID file contains current process PID
 	data, err := os.ReadFile(pidPath)
@@ -145,7 +149,9 @@ func TestRemoveOnlyOwnPID(t *testing.T) {
 	}
 
 	// Try to remove - should not remove since it's not our PID
-	pf.Remove()
+	if err := pf.Remove(); err != nil {
+		t.Logf("Remove returned error (expected when PID doesn't match): %v", err)
+	}
 
 	// Verify PID file still exists
 	if _, err := os.Stat(pidPath); os.IsNotExist(err) {
