@@ -203,6 +203,9 @@ install_binaries() {
         exit 1
     fi
     
+    # Clean up any stale PID files before installing new binaries
+    rm -f "$HOME/.cache/memofy/memofy-core.pid" "$HOME/.cache/memofy/memofy-ui.pid" 2>/dev/null || true
+    
     cp "$core_binary" "$INSTALL_DIR/memofy-core"
     cp "$ui_binary" "$INSTALL_DIR/memofy-ui"
     chmod +x "$INSTALL_DIR/memofy-core"
@@ -365,6 +368,10 @@ start_ui() {
     
     # Kill any existing instances
     killall memofy-ui 2>/dev/null || true
+    
+    # Clean up stale PID files after killing processes
+    sleep 1
+    rm -f "$HOME/.cache/memofy/memofy-ui.pid" 2>/dev/null || true
     
     # Start daemon if not running
     launchctl start com.memofy.core 2>/dev/null || true
