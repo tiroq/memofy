@@ -42,16 +42,35 @@ var (
 )
 
 func main() {
+	// Recover from any panics and log them
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "PANIC in memofy-core: %v\n", r)
+			if outLog != nil {
+				outLog.Printf("PANIC: %v", r)
+			}
+			if errLog != nil {
+				errLog.Printf("PANIC: %v", r)
+			}
+			os.Exit(1)
+		}
+	}()
+
 	// Initialize logging
 	if err := initLogging(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logging: %v\n", err)
 		os.Exit(1)
 	}
 
+	outLog.Println("===========================================")
 	outLog.Println("Starting Memofy Core v" + Version + "...")
+	outLog.Printf("PID: %d", os.Getpid())
+	outLog.Printf("Timestamp: %s", time.Now().Format(time.RFC3339))
+	outLog.Println("===========================================")
 
 	// Check for duplicate instances
 	pidFilePath := pidfile.GetPIDFilePath("memofy-core")
+	outLog.Printf("Checking PID file: %s", pidFilePath)
 	pf, err := pidfile.New(pidFilePath)
 	if err != nil {
 		errLog.Printf("Failed to create PID file: %v", err)
@@ -60,6 +79,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() {
+		outLog.Println("Cleaning up before exit...")
 		if err := pf.Remove(); err != nil {
 			errLog.Printf("Warning: failed to remove PID file: %v", err)
 		}
