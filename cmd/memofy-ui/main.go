@@ -3,7 +3,9 @@ package main
 import (
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -38,6 +40,16 @@ func main() {
 		}
 	}()
 	log.Printf("PID file created: %s (PID %d)", pidFilePath, os.Getpid())
+
+	// Setup signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-sigChan
+		log.Printf("Received signal %v, cleaning up...", sig)
+		pf.Remove()
+		os.Exit(0)
+	}()
 
 	// Initialize macOS application
 	app := appkit.Application_SharedApplication()
