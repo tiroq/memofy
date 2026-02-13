@@ -240,6 +240,30 @@ install_assets() {
     fi
 }
 
+# Install process management helper script
+install_helper_script() {
+    print_info "Installing process management helper..."
+    
+    # Copy memofy-ctl.sh if available locally (source install)
+    if [ -f "scripts/memofy-ctl.sh" ]; then
+        cp scripts/memofy-ctl.sh "$INSTALL_DIR/memofy-ctl"
+        chmod +x "$INSTALL_DIR/memofy-ctl"
+        print_success "Process helper installed from source"
+    else
+        # Download from GitHub (release install)
+        local ctl_url="https://raw.githubusercontent.com/tiroq/memofy/main/scripts/memofy-ctl.sh"
+        print_info "Downloading process helper from GitHub..."
+        if curl -fsSL "$ctl_url" -o "$INSTALL_DIR/memofy-ctl" 2>/dev/null; then
+            chmod +x "$INSTALL_DIR/memofy-ctl"
+            print_success "Process helper installed from GitHub"
+        else
+            print_warn "Process helper download failed (non-critical)"
+            # Provide usage info even if download fails
+            print_info "You can manually install: cp scripts/memofy-ctl.sh ~/.local/bin/memofy-ctl"
+        fi
+    fi
+}
+
 # Install config and LaunchAgent
 install_config() {
     print_info "Installing configuration..."
@@ -508,6 +532,7 @@ main() {
     install_binaries "$CORE_BINARY" "$UI_BINARY"
     install_config
     install_assets
+    install_helper_script
     echo ""
     
     # Setup permissions
@@ -531,6 +556,7 @@ main() {
     echo "  4. Memofy will detect and auto-record!"
     echo ""
     echo "View logs: tail -f /tmp/memofy-core.out.log"
+    echo "Process management: memofy-ctl {start|stop|restart|status|clean}"
     echo "Settings: Click menu bar icon > Settings"
     echo ""
 }
