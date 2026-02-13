@@ -3,6 +3,12 @@ set -e
 
 # Memofy Quick Install Script
 # One-command installation from GitHub releases or local build
+#
+# Usage:
+#   Latest stable:     curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh | bash
+#   Latest pre-release: curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh | bash -s -- --pre-release
+#   Specific version:  curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh | bash -s -- --release 0.1.0
+#   From source:       ./scripts/quick-install.sh --source
 
 REPO_URL="https://github.com/tiroq/memofy"
 RELEASES_URL="$REPO_URL/releases/download"
@@ -72,8 +78,17 @@ check_prerequisites() {
 }
 
 # Get latest release version
+# Args: $1 - include_prerelease (true/false, default: false)
 get_latest_version() {
-    curl -s "https://api.github.com/repos/tiroq/memofy/releases/latest" | grep '"tag_name":' | cut -d'"' -f4 | sed 's/^v//'
+    local include_prerelease="${1:-false}"
+    
+    if [ "$include_prerelease" = "true" ]; then
+        # Get latest release (including pre-releases)
+        curl -s "https://api.github.com/repos/tiroq/memofy/releases?per_page=1" 2>/dev/null | grep '"tag_name":' | head -1 | cut -d'"' -f4 | sed 's/^v//'
+    else
+        # Get latest stable release only
+        curl -s "https://api.github.com/repos/tiroq/memofy/releases/latest" 2>/dev/null | grep '"tag_name":' | cut -d'"' -f4 | sed 's/^v//'
+    fi
 }
 
 # Normalize architecture name to Go arch naming
@@ -271,12 +286,14 @@ start_ui() {
 # Parse arguments
 INSTALL_FROM_SOURCE=false
 INSTALL_FROM_RELEASE=false
+INCLUDE_PRERELEASE=false
 VERSION=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --source) INSTALL_FROM_SOURCE=true; shift ;;
         --release) INSTALL_FROM_RELEASE=true; VERSION="$2"; shift 2 ;;
+        --pre-release) INCLUDE_PRERELEASE=true; shift ;;
         --version) echo "$MEMOFY_VERSION"; exit 0 ;;
         --help)
             echo "Usage: ./quick-install.sh [OPTIONS]"
@@ -284,13 +301,16 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --source              Build from source (default if releases not available)"
             echo "  --release <version>   Install specific release version"
+            echo "  --pre-release         Include pre-release versions (alpha/beta)"
             echo "  --version             Show version"
             echo "  --help                Show this help"
             echo ""
             echo "Examples:"
-            echo "  ./quick-install.sh                  # Smart install (release or source)"
-            echo "  ./quick-install.sh --source         # Build from source"
-            echo "  ./quick-install.sh --release 0.1.0  # Install release v0.1.0"
+            echo "  ./quick-install.sh                    # Install latest stable release"
+            echo "  ./quick-install.sh --source           # Build from source"
+            echo "  ./quick-install.sh --release 0.1.0    # Install release v0.1.0"
+            echo "  ./quick-install.sh --pre-release      # Install latest pre-release"
+            echo "  ./quick-install.sh --release 0.1.1-alpha2  # Install specific alpha"
             exit 0
             ;;
         *)
@@ -335,8 +355,12 @@ main() {
     else
         # Smart detection: try release, fall back to source
         if command -v curl &> /dev/null; then
-            print_info "Attempting to download pre-built release..."
-            latest_version=$(get_latest_version 2>/dev/null || echo "")
+            if [ "$INCLUDE_PRERELEASE" = true ]; then
+                print_info "Attempting to download latest pre-release..."
+            else
+                print_info "Attempting to download latest stable release..."
+            fi
+            latest_version=$(get_latest_version "$INCLUDE_PRERELEASE" 2>/dev/null || echo "")
             if [ -n "$latest_version" ]; then
                 print_success "Found release v$latest_version"
                 download_dir="/tmp/memofy-download-$$"
@@ -351,7 +375,12 @@ main() {
                     build_from_source
                 fi
             else
-                print_info "No releases found, building from source..."
+                if [ "$INCLUDE_PRERELEASE" = true ]; then
+                    print_info "No releases found, building from source..."
+                else
+                    print_info "No stable releases found, building from source..."
+                    print_info "Tip: Use --pre-release to install alpha/beta versions"
+                fi
                 build_from_source
             fi
         else

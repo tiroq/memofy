@@ -53,7 +53,16 @@ See [OBS_AUTO_INITIALIZATION.md](OBS_AUTO_INITIALIZATION.md) for details.
 
 ### 2. Installation
 
-**One-Command Installation** (Recommended):
+**One-Line Installation** (No Git Required):
+```bash
+# Install latest stable release
+curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh | bash
+
+# Install latest pre-release (alpha/beta)
+curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh | bash -s -- --pre-release
+```
+
+**From Source** (Clone Repository):
 ```bash
 # Clone and install in one command
 git clone https://github.com/tiroq/memofy.git
@@ -68,7 +77,7 @@ That's it! The script will:
 - ✅ Start the menu bar UI
 - ✅ Guide you through OBS setup
 
-**Manual Installation** (if needed):
+**Manual Build** (if needed):
 ```bash
 # Clone repository
 git clone https://github.com/tiroq/memofy.git
@@ -88,13 +97,6 @@ make install
 
 **Note**: This project supports both [Task](https://taskfile.dev/) (recommended) and Make. 
 See [Taskfile Guide](docs/TASKFILE_GUIDE.md) for Task usage.
-
-**Install from Pre-Built Release**:
-```bash
-# Download and install latest release
-cd ~/Downloads
-bash <(curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh)
-```
 
 ### 3. Usage
 

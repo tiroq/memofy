@@ -4,6 +4,16 @@
 
 ### Fastest Way to Get Started
 
+**No Git Required - One Line**:
+```bash
+# Install latest stable release
+curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh | bash
+
+# Install latest pre-release (alpha/beta)
+curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh | bash -s -- --pre-release
+```
+
+**Or Clone Repository**:
 ```bash
 git clone https://github.com/tiroq/memofy.git
 cd memofy
@@ -41,9 +51,16 @@ bash scripts/quick-install.sh
 
 ## Installation Options
 
-### Option 1: One-Command Install (Recommended)
+### Option 1: One-Line Install (Recommended)
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh)
+# Latest stable release
+curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh | bash
+
+# Latest pre-release (alpha/beta)
+curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh | bash -s -- --pre-release
+
+# Specific version
+curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh | bash -s -- --release 0.1.0
 ```
 
 ### Option 2: Clone & Install

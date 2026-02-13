@@ -437,6 +437,25 @@ None (or describe if applicable)
 
 ## Installation
 
+### Quick Install (Recommended)
+
+**Latest Stable Release**:
+```bash
+curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh | bash
+```
+
+**Latest Pre-Release (Alpha/Beta)**:
+```bash
+curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh | bash -s -- --pre-release
+```
+
+**Specific Version**:
+```bash
+curl -fsSL https://raw.githubusercontent.com/tiroq/memofy/main/scripts/quick-install.sh | bash -s -- --release 0.1.0
+```
+
+### Manual Download
+
 Download the binary for your platform:
 - macOS Intel: `memofy-darwin-amd64.tar.gz`
 - macOS Apple Silicon: `memofy-darwin-arm64.tar.gz`
