@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/progrium/darwinkit/objc"
 	"github.com/tiroq/memofy/internal/ipc"
 	"github.com/tiroq/memofy/pkg/macui"
 )
@@ -110,35 +111,28 @@ func TestControlCommandsWriteToFile(t *testing.T) {
 		{
 			name: "start recording",
 			operation: func() {
-				app.StartRecording()
+				app.StartRecording(objc.Object{})
 			},
 			expectedCommand: "start",
 		},
 		{
 			name: "stop recording",
 			operation: func() {
-				app.StopRecording()
+				app.StopRecording(objc.Object{})
 			},
 			expectedCommand: "stop",
 		},
 		{
 			name: "auto mode",
 			operation: func() {
-				app.SetAutoMode()
+				app.SetAutoMode(objc.Object{})
 			},
 			expectedCommand: "auto",
 		},
 		{
-			name: "manual mode",
-			operation: func() {
-				app.SetManualMode()
-			},
-			expectedCommand: "start",
-		},
-		{
 			name: "pause mode",
 			operation: func() {
-				app.SetPauseMode()
+				app.SetPauseMode(objc.Object{})
 			},
 			expectedCommand: "pause",
 		},
@@ -333,13 +327,12 @@ func TestMenuItemVisibility(t *testing.T) {
 		name   string
 		method func()
 	}{
-		{"StartRecording", func() { app.StartRecording() }},
-		{"StopRecording", func() { app.StopRecording() }},
-		{"SetAutoMode", func() { app.SetAutoMode() }},
-		{"SetManualMode", func() { app.SetManualMode() }},
-		{"SetPauseMode", func() { app.SetPauseMode() }},
+		{"StartRecording", func() { app.StartRecording(objc.Object{}) }},
+		{"StopRecording", func() { app.StopRecording(objc.Object{}) }},
+		{"SetAutoMode", func() { app.SetAutoMode(objc.Object{}) }},
+		{"SetPauseMode", func() { app.SetPauseMode(objc.Object{}) }},
 		// Skip ShowSettings - requires GUI interaction and waits for user input
-		// {"ShowSettings", func() { app.ShowSettings() }},
+		// {"ShowSettings", func() { app.ShowSettings(objc.Object{}) }},
 	}
 
 	for _, mm := range menuMethods {
