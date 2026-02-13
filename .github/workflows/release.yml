@@ -4,6 +4,16 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      all_platforms:
+        description: 'Build for all platforms (macOS, Linux, Windows)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 permissions:
   contents: write
@@ -14,8 +24,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        os: [macos-latest]
+        goarch: [arm64, amd64]
         include:
-          # macOS builds
           - os: macos-latest
             goos: darwin
             goarch: arm64
@@ -24,6 +35,71 @@ jobs:
             goos: darwin
             goarch: amd64
             artifact_name: memofy-macos-amd64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Build memofy-core
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
+        run: |
+          mkdir -p bin
+          go build -o "bin/memofy-core-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-core/main.go
+
+      - name: Build memofy-ui
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
+        run: |
+          mkdir -p bin
+          go build -o "bin/memofy-ui-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-ui/main.go
+
+      - name: Create archive
+        run: |
+          mkdir -p "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          cp bin/memofy-core-* "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy-core"
+          cp bin/memofy-ui-* "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy-ui"
+          cp README.md LICENSE "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" || true
+          cp -r configs scripts "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" || true
+          tar czf "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" \
+            "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          rm -rf "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ github.workspace }}/memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, 'rc') || contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-cross-platform:
+    name: Build Cross-Platform
+    if: |
+      (github.event_name == 'workflow_dispatch' && inputs.all_platforms == 'true') ||
+      contains(github.event.head_commit.message, '[all-platforms]')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
           # Linux builds
           - os: ubuntu-latest
             goos: linux
@@ -61,32 +137,16 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: ${{ matrix.goos == 'darwin' && '1' || '0' }}
+          CGO_ENABLED: '0'
         run: |
           mkdir -p bin
           go build -o "bin/memofy-core-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-core/main.go
-
-      - name: Build memofy-ui
-        # memofy-ui is macOS-only (uses darwinkit)
-        if: matrix.goos == 'darwin'
-        shell: bash
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: '1'
-        run: |
-          mkdir -p bin
-          go build -o "bin/memofy-ui-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-ui/main.go
 
       - name: Create archive (Unix)
         if: runner.os != 'Windows'
         run: |
           mkdir -p "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
           cp bin/memofy-core-* "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy-core"
-          # Only include memofy-ui for macOS builds
-          if [ "${{ matrix.goos }}" = "darwin" ]; then
-            cp bin/memofy-ui-* "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy-ui"
-          fi
           cp README.md LICENSE "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" || true
           cp -r configs scripts "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" || true
           tar czf "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" \
@@ -99,7 +159,6 @@ jobs:
         run: |
           mkdir "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
           Copy-Item "bin/memofy-core-*" -Destination "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy-core.exe"
-          # Note: memofy-ui is macOS-only and not built for Windows
           Copy-Item "README.md", "LICENSE" -Destination "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" -ErrorAction SilentlyContinue
           Copy-Item "configs", "scripts" -Destination "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" -Recurse -ErrorAction SilentlyContinue
           Compress-Archive -Path "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}" `
@@ -111,8 +170,10 @@ jobs:
         with:
           files: |
             ${{ github.workspace }}/memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.*
-          generate_release_notes: true
+          generate_release_notes: false
           draft: false
           prerelease: ${{ contains(github.ref, 'rc') || contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
