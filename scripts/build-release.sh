@@ -4,12 +4,51 @@ set -e
 # Memofy Release Builder
 # Builds cross-platform binaries for GitHub releases
 
+# Print usage if --help requested (check this first)
+if [[ "$1" == "--help" || "$2" == "--help" ]]; then
+    echo "Usage: bash scripts/build-release.sh [VERSION] [OPTIONS]"
+    echo ""
+    echo "VERSION: Release version (default: 0.1.0)"
+    echo ""
+    echo "OPTIONS:"
+    echo "  --macos-only      Build only for macOS (default)"
+    echo "  --all-platforms   Build for macOS, Linux, and Windows"
+    echo "  --help            Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  bash scripts/build-release.sh 0.2.0          # Build v0.2.0 for macOS only"
+    echo "  bash scripts/build-release.sh 0.2.0 --all-platforms  # Build v0.2.0 for all platforms"
+    exit 0
+fi
+
+# Now assign version and platform after help check
 VERSION="${1:-0.1.0}"
+BUILD_ALL_PLATFORMS="${2:---macos-only}"
 BUILD_DIR="build/release"
 DIST_DIR="dist"
 
 echo "=== Memofy Release Builder ==="
 echo "Building version: $VERSION"
+echo ""
+
+# Validate platform option
+if [[ "$BUILD_ALL_PLATFORMS" != "--macos-only" && "$BUILD_ALL_PLATFORMS" != "--all-platforms" ]]; then
+    echo "❌ Invalid option: $BUILD_ALL_PLATFORMS"
+    echo "Use --help for usage information"
+    exit 1
+fi
+
+BUILD_MACOS=true
+BUILD_LINUX=false
+BUILD_WINDOWS=false
+
+if [[ "$BUILD_ALL_PLATFORMS" == "--all-platforms" ]]; then
+    BUILD_LINUX=true
+    BUILD_WINDOWS=true
+    echo "Building for: macOS, Linux, Windows"
+else
+    echo "Building for: macOS only"
+fi
 echo ""
 
 # Create directories
@@ -120,13 +159,17 @@ echo ""
 build_macos "arm64"
 build_macos "amd64"
 
-# Linux builds
-build_linux "amd64"
-build_linux "arm64"
+# Linux builds (conditional)
+if [[ "$BUILD_LINUX" == "true" ]]; then
+    build_linux "amd64"
+    build_linux "arm64"
+fi
 
-# Windows builds
-build_windows "amd64"
-build_windows "arm64"
+# Windows builds (conditional)
+if [[ "$BUILD_WINDOWS" == "true" ]]; then
+    build_windows "amd64"
+    build_windows "arm64"
+fi
 
 echo ""
 echo "=== Release Complete ==="
@@ -140,3 +183,4 @@ echo "  4. Upload artifacts from $DIST_DIR/"
 echo ""
 echo "Files ready for upload:"
 ls -lh "$DIST_DIR/" | grep -v "^total"
+
