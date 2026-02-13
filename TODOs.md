@@ -7,3 +7,4 @@
 [ ] Update logo in README and docs (small size for quick loading)
 [ ] API to control recording
 [ ] Check if core/ui already running
+[ ] Settings window: all settings should be in a single scrollable view. User should not have to edit config file manually.
