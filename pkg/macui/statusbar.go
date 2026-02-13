@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/progrium/darwinkit/helper/action"
 	"github.com/progrium/darwinkit/macos/appkit"
 	"github.com/progrium/darwinkit/objc"
 	"github.com/tiroq/memofy/internal/autoupdate"
@@ -218,10 +219,12 @@ func (app *StatusBarApp) rebuildMenu() {
 	if isRecording {
 		stopItem := appkit.NewMenuItem()
 		stopItem.SetTitle("⏹ Stop Recording")
+		action.Set(stopItem, app.StopRecording)
 		app.menu.AddItem(stopItem)
 	} else {
 		startItem := appkit.NewMenuItem()
 		startItem.SetTitle("▶️ Start Recording")
+		action.Set(startItem, app.StartRecording)
 		app.menu.AddItem(startItem)
 	}
 
@@ -233,6 +236,7 @@ func (app *StatusBarApp) rebuildMenu() {
 	if status.Mode == ipc.ModeAuto {
 		autoItem.SetState(appkit.OnState)
 	}
+	action.Set(autoItem, app.SetAutoMode)
 	app.menu.AddItem(autoItem)
 
 	pauseItem := appkit.NewMenuItem()
@@ -240,6 +244,7 @@ func (app *StatusBarApp) rebuildMenu() {
 	if status.Mode == ipc.ModePaused {
 		pauseItem.SetState(appkit.OnState)
 	}
+	action.Set(pauseItem, app.SetPauseMode)
 	app.menu.AddItem(pauseItem)
 
 	// Utilities
@@ -247,14 +252,17 @@ func (app *StatusBarApp) rebuildMenu() {
 
 	settingsItem := appkit.NewMenuItem()
 	settingsItem.SetTitle("⚙️ Settings...")
+	action.Set(settingsItem, app.ShowSettings)
 	app.menu.AddItem(settingsItem)
 
 	logsItem := appkit.NewMenuItem()
 	logsItem.SetTitle("📄 Open Logs")
+	action.Set(logsItem, app.OpenLogs)
 	app.menu.AddItem(logsItem)
 
 	checkUpdateItem := appkit.NewMenuItem()
 	checkUpdateItem.SetTitle("🔄 Check for Updates")
+	action.Set(checkUpdateItem, app.checkForUpdates)
 	app.menu.AddItem(checkUpdateItem)
 
 	// Quit
@@ -262,52 +270,65 @@ func (app *StatusBarApp) rebuildMenu() {
 	quitItem := appkit.NewMenuItem()
 	quitItem.SetTitle("Quit")
 	quitItem.SetKeyEquivalent("q")
-	quitItem.SetAction(objc.Sel("terminate:"))
-	quitItem.SetTarget(appkit.Application_SharedApplication())
+	quitFunc := func(sender objc.Object) {
+		appkit.Application_SharedApplication().Terminate(nil)
+	}
+	action.Set(quitItem, quitFunc)
 	app.menu.AddItem(quitItem)
 }
 
-// sendCommand writes a command to the command file
+// checkForUpdates wrapper that takes sender parameter (for action.Set)
+func (app *StatusBarApp) checkForUpdates(sender objc.Object) {
+	available, version, err := app.CheckForUpdates()
+	if err != nil {
+		SendErrorNotification("Update Check Failed", err.Error())
+		return
+	}
+	if available {
+		msg := fmt.Sprintf("Version %s is available. Would you like to update?", version)
+		SendNotification("Memofy", "Update Available", msg)
+		app.UpdateNow()
+	} else {
+		SendNotification("Memofy", "Up to Date", "You have the latest version")
+	}
+}
+
+// sendCommand writes a command to the daemon
 func (app *StatusBarApp) sendCommand(cmd ipc.Command) {
 	if err := ipc.WriteCommand(cmd); err != nil {
-		log.Printf("❌ Error sending command %s: %v", cmd, err)
+		log.Printf("Failed to write command: %v", err)
+		if notifErr := SendNotification("Memofy", "Error", "Could not send command"); notifErr != nil {
+			log.Printf("Warning: failed to send notification: %v", notifErr)
+		}
 	}
 }
 
-// StartRecording sends start command (T073)
-func (app *StatusBarApp) StartRecording() {
+// StartRecording sends start command (T075)
+func (app *StatusBarApp) StartRecording(sender objc.Object) {
 	app.sendCommand(ipc.CmdStart)
-	if err := SendNotification("Memofy", "Command Sent", "Manual recording started"); err != nil {
+	if err := SendNotification("Memofy", "Command Sent", "Starting recording"); err != nil {
 		log.Printf("Warning: failed to send notification: %v", err)
 	}
 }
 
-// StopRecording sends stop command (T074)
-func (app *StatusBarApp) StopRecording() {
+// StopRecording sends stop command (T076)
+func (app *StatusBarApp) StopRecording(sender objc.Object) {
 	app.sendCommand(ipc.CmdStop)
-	if err := SendNotification("Memofy", "Command Sent", "Recording stopped"); err != nil {
+	if err := SendNotification("Memofy", "Command Sent", "Stopping recording"); err != nil {
 		log.Printf("Warning: failed to send notification: %v", err)
 	}
 }
 
-// SetAutoMode sends auto mode command (T075)
-func (app *StatusBarApp) SetAutoMode() {
+// SetAutoMode sends auto mode command (T077)
+func (app *StatusBarApp) SetAutoMode(sender objc.Object) {
 	app.sendCommand(ipc.CmdAuto)
-	if err := SendNotification("Memofy", "Mode Changed", "Switched to Auto mode"); err != nil {
-		log.Printf("Warning: failed to send notification: %v", err)
-	}
-}
-
-// SetManualMode sends start command then switches tracking (T076)
-func (app *StatusBarApp) SetManualMode() {
-	app.sendCommand(ipc.CmdStart)
-	if err := SendNotification("Memofy", "Recording Started", "Manual recording started - auto-detection paused"); err != nil {
+	if err := SendNotification("Memofy", "Mode Changed", "Automatic detection enabled"); err != nil {
 		log.Printf("Warning: failed to send notification: %v", err)
 	}
 }
 
 // SetPauseMode sends pause command (T077)
-func (app *StatusBarApp) SetPauseMode() {
+func (app *StatusBarApp) SetPauseMode(sender objc.Object) {
 	app.sendCommand(ipc.CmdPause)
 	if err := SendNotification("Memofy", "Mode Changed", "Monitoring paused"); err != nil {
 		log.Printf("Warning: failed to send notification: %v", err)
@@ -338,7 +359,7 @@ func (app *StatusBarApp) OpenRecordingsFolder() {
 }
 
 // OpenLogs opens the /tmp directory in Finder showing logs (T079)
-func (app *StatusBarApp) OpenLogs() {
+func (app *StatusBarApp) OpenLogs(sender objc.Object) {
 	cmd := exec.Command("open", "/tmp", "-a", "Finder")
 	if err := cmd.Run(); err != nil {
 		log.Printf("Failed to open logs: %v", err)
@@ -349,7 +370,7 @@ func (app *StatusBarApp) OpenLogs() {
 }
 
 // ShowSettings opens the settings window (T082-T084)
-func (app *StatusBarApp) ShowSettings() {
+func (app *StatusBarApp) ShowSettings(sender objc.Object) {
 	if err := app.settingsWindow.showSimpleSettingsDialog(); err != nil {
 		log.Printf("Failed to show settings: %v", err)
 		if notifErr := SendNotification("Memofy", "Error", "Could not open settings"); notifErr != nil {
