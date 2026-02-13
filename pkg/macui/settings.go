@@ -7,8 +7,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
+	"github.com/progrium/darwinkit/macos/appkit"
+	"github.com/progrium/darwinkit/macos/foundation"
+	"github.com/progrium/darwinkit/objc"
 	"github.com/tiroq/memofy/internal/config"
 )
 
@@ -100,11 +104,8 @@ func (sw *SettingsWindow) ShowSettingsForm() error {
 func (sw *SettingsWindow) showSimpleSettingsDialog() error {
 	// Create settings window with proper UI
 	return sw.showNativeSettingsWindow()
-}
-
-// showNativeSettingsWindow creates a native macOS settings window
-func (sw *SettingsWindow) showNativeSettingsWindow() error {
-	// Show settings in system text editor for now (user can edit JSON)
+}Create a comprehensive settings window using AppleScript for simplicity
+	// This allows for a scrollable form with all settings
 	configPath := filepath.Join(os.Getenv("HOME"), ".config", "memofy", "detection-rules.json")
 
 	// Ensure config exists
@@ -115,22 +116,75 @@ func (sw *SettingsWindow) showNativeSettingsWindow() error {
 		}
 	}
 
-	// Show current settings info
-	info := sw.GetCurrentSettings()
+	// Get current values
+	var zoomProcesses, zoomHints, teamsProcesses, teamsHints, meetProcesses, meetHints string
+	zoomEnabled, teamsEnabled, meetEnabled := "true", "true", "true"
+
+	for _, rule := range sw.detectionRules.Rules {
+		switch rule.Application {
+		case "zoom":
+			zoomProcesses = strings.Join(rule.ProcessNames, ", ")
+			zoomHints = strings.Join(rule.WindowHints, ", ")
+			zoomEnabled = fmt.Sprintf("%t", rule.Enabled)
+		case "teams":
+			teamsProcesses = strings.Join(rule.ProcessNames, ", ")
+			teamsHints = strings.Join(rule.WindowHints, ", ")
+			teamsEnabled = fmt.Sprintf("%t", rule.Enabled)
+		case "meet":
+			meetProcesses = strings.Join(rule.ProcessNames, ", ")
+			meetHints = strings.Join(rule.WindowHints, ", ")
+			meetEnabled = fmt.Sprintf("%t", rule.Enabled)
+		}
+	}
+
+	// Build the form using AppleScript
 	script := fmt.Sprintf(`
 tell application "System Events"
 	activate
-	set settingsChoice to button returned of (display dialog "%s\n\nWould you like to:" buttons {"Edit Config File", "View in Finder", "Cancel"} default button "Edit Config File" with title "Memofy Settings")
 	
-	if settingsChoice is "Edit Config File" then
+	-- Settings form
+	set settingsDialog to display dialog "MEMOFY SETTINGS
+	
+Configure meeting detection rules and thresholds.
+
+ZOOM DETECTION
+Process names: %s
+Window hints: %s
+Enabled: %s
+
+TEAMS DETECTION  
+Process names: %s
+Window hints: %s
+Enabled: %s
+
+GOOGLE MEET DETECTION
+Process names: %s  
+Window hints: %s
+Enabled: %s
+
+THRESHOLDS
+Poll interval: %d seconds
+Start threshold: %d detections
+Stop threshold: %d non-detections  
+Allow dev updates: %t
+
+Choose an option:" buttons {"Edit Config", "Advanced", "Close"} default button "Close" with title "Memofy Settings" giving up after 3600
+	
+	set buttonChoice to button returned of settingsDialog
+	
+	if buttonChoice is "Edit Config" then
 		return "edit"
-	else if settingsChoice is "View in Finder" then
-		return "finder"
+	else if buttonChoice is "Advanced" then
+		return "advanced"
 	else
-		return "cancel"
+		return "close"
 	end if
 end tell
-`, escapeAppleScript(info))
+`, escapeAppleScript(zoomProcesses), escapeAppleScript(zoomHints), zoomEnabled,
+		escapeAppleScript(teamsProcesses), escapeAppleScript(teamsHints), teamsEnabled,
+		escapeAppleScript(meetProcesses), escapeAppleScript(meetHints), meetEnabled,
+		sw.detectionRules.PollInterval, sw.detectionRules.StartThreshold,
+		sw.detectionRules.StopThreshold, sw.detectionRules.AllowDevUpdates)
 
 	cmd := exec.Command("osascript", "-e", script)
 	output, err := cmd.CombinedOutput()
@@ -142,11 +196,148 @@ end tell
 	choice := strings.TrimSpace(string(output))
 	switch choice {
 	case "edit":
-		// Open in default text editor
+		// Open config file in editor
 		if err := exec.Command("open", "-e", configPath).Run(); err != nil {
 			log.Printf("Failed to open config in editor: %v", err)
 		}
-	case "finder":
+	case "advanced":
+		// Show advanced settings editor
+		return sw.showAdvancedSettings()
+	}
+
+	return nil
+}
+
+// showAdvancedSettings shows a form to edit individual settings
+func (sw *SettingsWindow) showAdvancedSettings() error {
+	// Get current values
+	var zoomProcesses, teamsProcesses, meetProcesses string
+	for _, rule := range sw.detectionRules.Rules {
+		switch rule.Application {
+		case "zoom":
+			zoomProcesses = strings.Join(rule.ProcessNames, ", ")
+		case "teams":
+			teamsProcesses = strings.Join(rule.ProcessNames, ", ")
+		case "meet":
+			meetProcesses = strings.Join(rule.ProcessNames, ", ")
+		}
+	}
+
+	script := fmt.Sprintf(`
+tell application "System Events"
+	activate
+	
+	-- Get Poll Interval
+	set pollInterval to text returned of (display dialog "Poll Interval (1-10 seconds):" default answer "%d" with title "Memofy Settings")
+	
+	-- Get Start Threshold
+	set startThresh to text returned of (display dialog "Start Threshold (1-10 detections):" default answer "%d" with title "Memofy Settings")
+	
+	-- Get Stop Threshold  
+	set stopThresh to text returned of (display dialog "Stop Threshold (>= start, detections):" default answer "%d" with title "Memofy Settings")
+	
+	-- Get Zoom process
+	set zoomProc to text returned of (display dialog "Zoom Process Name:" default answer "%s" with title "Memofy Settings")
+	
+	-- Get Teams process
+	set teamsProc to text returned of (display dialog "Teams Process Name:" default answer "%s" with title "Memofy Settings")
+	
+	-- Get Meet browser processes
+	set meetProc to text returned of (display dialog "Google Meet Browsers (comma-separated):" default answer "%s" with title "Memofy Settings")
+	
+	-- Get dev updates preference
+	set devUpdates to button returned of (display dialog "Allow development/pre-release updates?" buttons {"No", "Yes"} default button "No" with title "Memofy Settings")
+	
+	set allowDev to "false"
+	if devUpdates is "Yes" then
+		set allowDev to "true"
+	end if
+	
+	-- Return all values separated by |
+	return pollInterval & "|" & startThresh & "|" & stopThresh & "|" & zoomProc & "|" & teamsProc & "|" & meetProc & "|" & allowDev
+end tell
+`, sw.detectionRules.PollInterval, sw.detectionRules.StartThreshold, sw.detectionRules.StopThreshold,
+		escapeAppleScript(zoomProcesses), escapeAppleScript(teamsProcesses), escapeAppleScript(meetProcesses))
+
+	cmd := exec.Command("osascript", "-e", script)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Advanced settings cancelled: %v", err)
+		return nil
+	}
+
+	// Parse the response
+	result := strings.TrimSpace(string(output))
+	parts := strings.Split(result, "|")
+	if len(parts) != 7 {
+		log.Printf("Invalid response from settings dialog: %s", result)
+		return nil
+	}
+
+	// Convert and validate
+	pollInterval, err := strconv.Atoi(parts[0])
+	if err != nil || pollInterval < 1 || pollInterval > 10 {
+		return fmt.Errorf("invalid poll interval: %s (must be 1-10)", parts[0])
+	}
+
+	startThresh, err := strconv.Atoi(parts[1])
+	if err != nil || startThresh < 1 || startThresh > 10 {
+		return fmt.Errorf("invalid start threshold: %s (must be 1-10)", parts[1])
+	}
+
+	stopThresh, err := strconv.Atoi(parts[2])
+	if err != nil || stopThresh < startThresh {
+		return fmt.Errorf("invalid stop threshold: %s (must be >= %d)", parts[2], startThresh)
+	}
+
+	zoomProc := strings.TrimSpace(parts[3])
+	teamsProc := strings.TrimSpace(parts[4])
+	meetProc := strings.TrimSpace(parts[5])
+	allowDev := parts[6] == "true"
+
+	// Update config
+	sw.detectionRules.PollInterval = pollInterval
+	sw.detectionRules.StartThreshold = startThresh
+	sw.detectionRules.StopThreshold = stopThresh
+	sw.detectionRules.AllowDevUpdates = allowDev
+
+	// Update rules
+	for i, rule := range sw.detectionRules.Rules {
+		switch rule.Application {
+		case "zoom":
+			if zoomProc != "" {
+				sw.detectionRules.Rules[i].ProcessNames = strings.Split(zoomProc, ",")
+				for j := range sw.detectionRules.Rules[i].ProcessNames {
+					sw.detectionRules.Rules[i].ProcessNames[j] = strings.TrimSpace(sw.detectionRules.Rules[i].ProcessNames[j])
+				}
+			}
+		case "teams":
+			if teamsProc != "" {
+				sw.detectionRules.Rules[i].ProcessNames = strings.Split(teamsProc, ",")
+				for j := range sw.detectionRules.Rules[i].ProcessNames {
+					sw.detectionRules.Rules[i].ProcessNames[j] = strings.TrimSpace(sw.detectionRules.Rules[i].ProcessNames[j])
+				}
+			}
+		case "meet":
+			if meetProc != "" {
+				sw.detectionRules.Rules[i].ProcessNames = strings.Split(meetProc, ",")
+				for j := range sw.detectionRules.Rules[i].ProcessNames {
+					sw.detectionRules.Rules[i].ProcessNames[j] = strings.TrimSpace(sw.detectionRules.Rules[i].ProcessNames[j])
+				}
+			}
+		}
+	}
+
+	// Save changes
+	if err := config.SaveDetectionRules(sw.detectionRules); err != nil {
+		return fmt.Errorf("failed to save settings: %v", err)
+	}
+
+	log.Printf("✓ Settings saved: poll=%ds, thresholds=%d/%d, dev_updates=%t",
+		pollInterval, startThresh, stopThresh, allowDev)
+
+	if err := SendNotification("Memofy", "Settings Updated", "Detection rules saved successfully"); err != nil {
+		log.Printf("Warning: failed to send notification: %v", err)se "finder":
 		// Show in Finder
 		if err := exec.Command("open", "-R", configPath).Run(); err != nil {
 			log.Printf("Failed to show config in Finder: %v", err)
