@@ -12,6 +12,11 @@ The simplest way to create releases is using [Task](https://taskfile.dev/):
 # Stable release (v0.2.0)
 task release-stable VERSION=0.2.0
 
+# Auto-bumped stable releases (no args)
+task release-major
+task release-minor
+task release-patch
+
 # Release candidate (v0.2.0-rc1)
 task release-rc VERSION=0.2.0 RC=1
 
@@ -20,6 +25,10 @@ task release-beta VERSION=0.2.0 BETA=1
 
 # Alpha release (v0.2.0-alpha1)
 task release-alpha VERSION=0.2.0 ALPHA=1
+
+# Auto alpha/beta dev releases (no args)
+task release-alpha-auto
+task release-beta-auto
 ```
 
 The task automatically:
@@ -118,6 +127,10 @@ git push origin main v0.2.0-alpha1
 - Earliest development milestone
 - For internal development team
 
+**Auto alpha/beta behavior**:
+- `task release-alpha-auto` and `task release-beta-auto` derive the base version from the latest stable tag and bump the patch by 1 (e.g., latest stable `v1.4.2` → `v1.4.3-alpha1`).
+- If a tag for that base already exists, the numeric suffix is incremented (e.g., `alpha2`, `beta3`).
+
 ## Using Task for Releases
 
 [Task](https://taskfile.dev/) provides convenient commands for the entire release workflow.
@@ -153,11 +166,16 @@ task release-status
 ```bash
 # Stable releases
 task release-stable VERSION=0.2.0
+task release-major
+task release-minor
+task release-patch
 
 # Pre-releases
 task release-rc VERSION=0.2.0 RC=1      # Release candidate
 task release-beta VERSION=0.2.0 BETA=1  # Beta version
 task release-alpha VERSION=0.2.0 ALPHA=1 # Alpha version
+task release-alpha-auto                 # Auto alpha based on latest stable
+task release-beta-auto                  # Auto beta based on latest stable
 
 # Utilities
 task release-check           # Verify ready for release

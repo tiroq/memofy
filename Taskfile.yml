@@ -165,6 +165,136 @@ tasks:
       - echo "✓ GitHub Actions will now build and publish the release"
       - 'echo "→ View workflow: https://github.com/{{.REPO_OWNER}}/{{.REPO_NAME}}/actions"'
 
+  release-major:
+    desc: 'Auto-bump major version and release (no args)'
+    vars:
+      NEXT_VERSION:
+        sh: |
+          latest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+          latest=${latest#v}
+          if [ -z "$latest" ]; then
+            echo "1.0.0"
+            exit 0
+          fi
+          IFS=. read -r major minor patch <<EOF
+          $latest
+          EOF
+          major=$((major+1))
+          minor=0
+          patch=0
+          echo "$major.$minor.$patch"
+    cmds:
+      - task: release-tag
+        vars:
+          VERSION: 'v{{.NEXT_VERSION}}'
+
+  release-minor:
+    desc: 'Auto-bump minor version and release (no args)'
+    vars:
+      NEXT_VERSION:
+        sh: |
+          latest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+          latest=${latest#v}
+          if [ -z "$latest" ]; then
+            echo "0.1.0"
+            exit 0
+          fi
+          IFS=. read -r major minor patch <<EOF
+          $latest
+          EOF
+          minor=$((minor+1))
+          patch=0
+          echo "$major.$minor.$patch"
+    cmds:
+      - task: release-tag
+        vars:
+          VERSION: 'v{{.NEXT_VERSION}}'
+
+  release-patch:
+    desc: 'Auto-bump patch version and release (no args)'
+    vars:
+      NEXT_VERSION:
+        sh: |
+          latest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+          latest=${latest#v}
+          if [ -z "$latest" ]; then
+            echo "0.0.1"
+            exit 0
+          fi
+          IFS=. read -r major minor patch <<EOF
+          $latest
+          EOF
+          patch=$((patch+1))
+          echo "$major.$minor.$patch"
+    cmds:
+      - task: release-tag
+        vars:
+          VERSION: 'v{{.NEXT_VERSION}}'
+
+  release-alpha-auto:
+    desc: 'Auto-create next alpha tag from latest stable (no args)'
+    vars:
+      BASE_VERSION:
+        sh: |
+          latest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+          latest=${latest#v}
+          if [ -z "$latest" ]; then
+            echo "0.1.0"
+            exit 0
+          fi
+          IFS=. read -r major minor patch <<EOF
+          $latest
+          EOF
+          patch=$((patch+1))
+          echo "$major.$minor.$patch"
+      NEXT_VERSION:
+        sh: |
+          base="{{.BASE_VERSION}}"
+          latest=$(git tag -l "v${base}-alpha*" | sort -V | tail -1)
+          if [ -z "$latest" ]; then
+            echo "v${base}-alpha1"
+            exit 0
+          fi
+          n=${latest##*alpha}
+          n=$((n+1))
+          echo "v${base}-alpha${n}"
+    cmds:
+      - task: release-tag
+        vars:
+          VERSION: '{{.NEXT_VERSION}}'
+
+  release-beta-auto:
+    desc: 'Auto-create next beta tag from latest stable (no args)'
+    vars:
+      BASE_VERSION:
+        sh: |
+          latest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+          latest=${latest#v}
+          if [ -z "$latest" ]; then
+            echo "0.1.0"
+            exit 0
+          fi
+          IFS=. read -r major minor patch <<EOF
+          $latest
+          EOF
+          patch=$((patch+1))
+          echo "$major.$minor.$patch"
+      NEXT_VERSION:
+        sh: |
+          base="{{.BASE_VERSION}}"
+          latest=$(git tag -l "v${base}-beta*" | sort -V | tail -1)
+          if [ -z "$latest" ]; then
+            echo "v${base}-beta1"
+            exit 0
+          fi
+          n=${latest##*beta}
+          n=$((n+1))
+          echo "v${base}-beta${n}"
+    cmds:
+      - task: release-tag
+        vars:
+          VERSION: '{{.NEXT_VERSION}}'
+
   release-stable:
     desc: 'Create and push a stable release tag (usage: task release-stable VERSION=0.2.0)'
     vars:
