@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/progrium/darwinkit/macos/appkit"
 	"github.com/tiroq/memofy/internal/ipc"
 	"github.com/tiroq/memofy/pkg/macui"
 )
@@ -21,6 +22,10 @@ var (
 func main() {
 	log.Println("Memofy UI starting (version " + Version + ")...")
 
+	// Initialize macOS application
+	app := appkit.Application_SharedApplication()
+	app.SetActivationPolicy(appkit.ApplicationActivationPolicyAccessory) // Run as menu bar only (no dock icon)
+
 	// Create status bar app
 	statusBarApp = macui.NewStatusBarApp()
 
@@ -29,8 +34,11 @@ func main() {
 		log.Printf("Failed to load initial status: %v", err)
 	}
 
-	// Start watching status file
-	watchStatusFile()
+	// Start watching status file in background
+	go watchStatusFile()
+
+	// Run the application event loop
+	app.Run()
 }
 
 // updateStatus reads status.json and updates UI
