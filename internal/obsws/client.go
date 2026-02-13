@@ -47,6 +47,11 @@ type Client struct {
 	reconnectEnabled bool
 	reconnectDelay   time.Duration
 	stopChan         chan struct{}
+
+	// Identification
+	identifiedChan chan struct{}
+	helloChan      chan *HelloData
+	helloErrChan   chan error
 }
 
 // Message types
@@ -119,6 +124,9 @@ func NewClient(url, password string) *Client {
 		reconnectEnabled: true,
 		reconnectDelay:   5 * time.Second,
 		stopChan:         make(chan struct{}),
+		identifiedChan:   make(chan struct{}),
+		helloChan:        make(chan *HelloData, 1),
+		helloErrChan:     make(chan error, 1),
 		recordingState: RecordingState{
 			OBSStatus:   "disconnected",
 			LastUpdated: time.Now(),
@@ -146,39 +154,14 @@ func (c *Client) Connect() error {
 	c.connected = true
 	c.mu.Unlock()
 
-	// Start message reader
+	// Start message reader (handles Hello, Identified, and all subsequent messages)
 	go c.readMessages()
 
 	// Wait for Hello message (with timeout)
-	helloChan := make(chan *HelloData, 1)
-	errChan := make(chan error, 1)
-
-	go func() {
-		// Read first message (should be Hello)
-		var msg Message
-		if err := conn.ReadJSON(&msg); err != nil {
-			errChan <- err
-			return
-		}
-
-		if msg.Op != OpHello {
-			errChan <- fmt.Errorf("expected Hello (op=0), got op=%d", msg.Op)
-			return
-		}
-
-		var hello HelloData
-		if err := json.Unmarshal(msg.D, &hello); err != nil {
-			errChan <- err
-			return
-		}
-
-		helloChan <- &hello
-	}()
-
 	select {
-	case hello := <-helloChan:
+	case hello := <-c.helloChan:
 		return c.authenticate(hello)
-	case err := <-errChan:
+	case err := <-c.helloErrChan:
 		c.disconnect()
 		return err
 	case <-time.After(10 * time.Second):
@@ -219,38 +202,14 @@ func (c *Client) authenticate(hello *HelloData) error {
 		return err
 	}
 
-	// Wait for Identified response
-	identifiedChan := make(chan bool, 1)
-	errChan := make(chan error, 1)
-
-	go func() {
-		var msg Message
-		c.mu.RLock()
-		err := c.conn.ReadJSON(&msg)
-		c.mu.RUnlock()
-
-		if err != nil {
-			errChan <- err
-			return
-		}
-
-		if msg.Op == OpIdentified {
-			identifiedChan <- true
-		} else {
-			errChan <- fmt.Errorf("expected Identified (op=2), got op=%d", msg.Op)
-		}
-	}()
-
+	// Wait for Identified message via channel (handled in readMessages)
 	select {
-	case <-identifiedChan:
+	case <-c.identifiedChan:
 		c.mu.Lock()
 		c.identified = true
 		c.mu.Unlock()
 		c.updateOBSStatus("connected", hello.OBSWebSocketVersion)
 		return nil
-	case err := <-errChan:
-		c.disconnect()
-		return err
 	case <-time.After(10 * time.Second):
 		c.disconnect()
 		return fmt.Errorf("timeout waiting for Identified message")
@@ -290,6 +249,28 @@ func (c *Client) readMessages() {
 		}
 
 		switch msg.Op {
+		case OpHello:
+			// Handle Hello message (start of connection)
+			var hello HelloData
+			if err := json.Unmarshal(msg.D, &hello); err != nil {
+				select {
+				case c.helloErrChan <- err:
+				default:
+				}
+				return
+			}
+			select {
+			case c.helloChan <- &hello:
+			default:
+			}
+
+		case OpIdentified:
+			// Handle Identified message (authentication complete)
+			select {
+			case c.identifiedChan <- struct{}{}:
+			default:
+			}
+
 		case OpEvent:
 			var event Event
 			if err := json.Unmarshal(msg.D, &event); err == nil {
