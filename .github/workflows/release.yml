@@ -57,24 +57,24 @@ jobs:
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
       - name: Build memofy-core
+        shell: bash
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: ${{ matrix.goos == 'darwin' && '1' || '0' }}
         run: |
-          go build -o "bin/memofy-core-${{ matrix.artifact_name }}" \
-            -ldflags "-X main.Version=${{ steps.version.outputs.version }}" \
-            ./cmd/memofy-core/main.go
+          mkdir -p bin
+          go build -o "bin/memofy-core-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-core/main.go
 
       - name: Build memofy-ui
+        shell: bash
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: ${{ matrix.goos == 'darwin' && '1' || '0' }}
         run: |
-          go build -o "bin/memofy-ui-${{ matrix.artifact_name }}" \
-            -ldflags "-X main.Version=${{ steps.version.outputs.version }}" \
-            ./cmd/memofy-ui/main.go
+          mkdir -p bin
+          go build -o "bin/memofy-ui-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-ui/main.go
 
       - name: Create archive (Unix)
         if: runner.os != 'Windows'
