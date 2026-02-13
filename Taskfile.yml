@@ -180,13 +180,15 @@ tasks:
           echo "   Install from: https://cli.github.com/"
           exit 1
         fi
+        # Get repo owner/name from git remote
+        repo=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || git config --get remote.origin.url | sed -E 's|.*/([^/]+/[^/]+)(\.git)?$|\1|')
         echo "→ Waiting for release workflow to start for {{.VERSION}}..."
         attempts=0
         run_id=""
         while [ $attempts -lt 30 ]; do
-          run_id=$(gh run list --workflow release.yml --event push --limit 20 \
-            --json databaseId,displayTitle,headBranch \
-            --jq '.[] | select(.displayTitle|contains("{{.VERSION}}") or .headBranch=="{{.VERSION}}") | .databaseId' \
+          # Use gh api to get workflow runs for the specific tag ref
+          run_id=$(gh api "repos/$repo/actions/workflows/release.yml/runs?event=push&per_page=20" \
+            --jq '.workflow_runs[] | select(.head_branch == "{{.VERSION}}") | .id' \
             | head -1)
           if [ -n "$run_id" ]; then
             break
@@ -200,8 +202,9 @@ tasks:
         fi
         echo "→ Monitoring release workflow run $run_id..."
         while true; do
-          status=$(gh run view "$run_id" --json status --jq '.status')
-          conclusion=$(gh run view "$run_id" --json conclusion --jq '.conclusion')
+          run_data=$(gh api "repos/$repo/actions/runs/$run_id")
+          status=$(echo "$run_data" | jq -r '.status')
+          conclusion=$(echo "$run_data" | jq -r '.conclusion')
           if [ "$status" = "completed" ]; then
             if [ "$conclusion" = "success" ]; then
               echo "✓ Release workflow succeeded for {{.VERSION}}."
