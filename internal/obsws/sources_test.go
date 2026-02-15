@@ -271,7 +271,7 @@ func TestPhase6_EnsureRequiredSources(t *testing.T) {
 	// The function should either succeed or fail gracefully without crashing
 	// Allow either outcome as long as it doesn't crash
 	_ = err // Can be error or nil depending on mock state
-	
+
 	// Verify client is still connected (didn't crash)
 	testutil.AssertTrue(t, client.IsConnected(), "Client should still be connected after EnsureRequiredSources")
 }
@@ -279,7 +279,7 @@ func TestPhase6_EnsureRequiredSources(t *testing.T) {
 // TestPhase6_SourceAlreadyExists verifies handling when source already exists
 func TestPhase6_SourceAlreadyExists(t *testing.T) {
 	t.Skip("Skipping: Mock server resource handling needs investigation")
-	
+
 	// This test would verify that creating a source twice doesn't crash
 	// Temporarily skipped due to connection timeout issues with rapid test execution
 }
@@ -347,7 +347,7 @@ func TestPhase6_SourceValidationPostCreation(t *testing.T) {
 // TestPhase6_SourceCreationTimeLimit verifies source creation respects time limits
 func TestPhase6_SourceCreationTimeLimit(t *testing.T) {
 	t.Skip("Skipping: Time limit testing requires controlled slow responses from mock server")
-	
+
 	// This test would verify that source creation operations timeout appropriately
 	// when the server takes too long to respond. This requires a mock server
 	// that can simulate slow or hanging responses, which our current mock doesn't support.
@@ -378,4 +378,3 @@ func TestPhase6_SourceRecovery(t *testing.T) {
 	err2 := client.CreateSource("Test Scene", "Test Source 2", "screen_capture", map[string]interface{}{})
 	testutil.AssertNoError(t, err2, "CreateSource should succeed after recovery")
 }
-
