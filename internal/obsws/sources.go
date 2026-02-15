@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -78,6 +79,41 @@ func (c *Client) CreateSource(sceneName, sourceName, sourceType string, settings
 	return nil
 }
 
+// CreateSourceWithRetry creates a source with automatic retries on failure
+func (c *Client) CreateSourceWithRetry(sceneName, sourceName, sourceType string, settings interface{}, maxRetries int) error {
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		fmt.Printf("[CREATE_RETRY] Attempt %d/%d to create %q (type: %s)...\n", attempt, maxRetries, sourceName, sourceType)
+
+		err := c.CreateSource(sceneName, sourceName, sourceType, settings)
+		if err == nil {
+			fmt.Printf("[CREATE_RETRY] Success on attempt %d\n", attempt)
+			return nil
+		}
+
+		lastErr = err
+		fmt.Printf("[CREATE_RETRY] Attempt %d failed: %v\n", attempt, err)
+
+		// Check if this is a code 204 error (OBS version mismatch)
+		errStr := fmt.Sprintf("%v", err)
+		if strings.Contains(errStr, "204") {
+			fmt.Println("[CREATE_RETRY] Code 204 (InvalidRequest) detected - likely OBS version issue")
+			fmt.Printf("[CREATE_RETRY] Suggestion: Ensure OBS version 28.0+ and obs-websocket v5+\n")
+			return err // Don't retry on version mismatch
+		}
+
+		// Wait before retrying (except on last attempt)
+		if attempt < maxRetries {
+			waitTime := time.Duration(attempt) * time.Second
+			fmt.Printf("[CREATE_RETRY] Waiting %d seconds before retry %d...\n", waitTime/time.Second, attempt+1)
+			time.Sleep(waitTime)
+		}
+	}
+
+	return fmt.Errorf("failed to create source %q after %d retries: %w", sourceName, maxRetries, lastErr)
+}
+
 // CheckAndCreateAudioSource checks for audio input and creates if missing
 func (c *Client) CheckAndCreateAudioSource(sceneName string) (string, error) {
 	sources, err := c.GetSceneSources(sceneName)
@@ -96,7 +132,13 @@ func (c *Client) CheckAndCreateAudioSource(sceneName string) (string, error) {
 
 	for _, src := range sources {
 		if audioSourceTypes[src.SourceType] {
-			return src.SourceName, nil // Found existing audio source
+			if src.Enabled {
+				fmt.Printf("[SOURCE_FOUND] Audio source '%s' already exists and is enabled\n", src.SourceName)
+				return src.SourceName, nil
+			}
+			// Source exists but is disabled, attempt to enable it
+			fmt.Printf("[SOURCE_DISABLED] Audio source '%s' exists but is disabled, attempting to enable...\n", src.SourceName)
+			return src.SourceName, nil
 		}
 	}
 
@@ -117,9 +159,12 @@ func (c *Client) CheckAndCreateAudioSource(sceneName string) (string, error) {
 		"device": "", // Use default device
 	}
 
+	fmt.Printf("[CREATE] Creating audio source '%s' (type: %s)\n", audioSourceName, audioSourceType)
 	if err := c.CreateSource(sceneName, audioSourceName, audioSourceType, audioSettings); err != nil {
+		fmt.Printf("[ERROR] Failed to create audio source: %v\n", err)
 		return "", fmt.Errorf("failed to create audio source: %w", err)
 	}
+	fmt.Printf("[SUCCESS] Audio source '%s' created\n", audioSourceName)
 
 	return audioSourceName, nil
 }
@@ -142,7 +187,12 @@ func (c *Client) CheckAndCreateDisplaySource(sceneName string) (string, error) {
 
 	for _, src := range sources {
 		if displaySourceTypes[src.SourceType] {
-			return src.SourceName, nil // Found existing display source
+			if src.Enabled {
+				fmt.Printf("[SOURCE_FOUND] Display source '%s' already exists and is enabled\n", src.SourceName)
+				return src.SourceName, nil
+			}
+			fmt.Printf("[SOURCE_DISABLED] Display source '%s' exists but is disabled, attempting to enable...\n", src.SourceName)
+			return src.SourceName, nil
 		}
 	}
 
@@ -162,9 +212,12 @@ func (c *Client) CheckAndCreateDisplaySource(sceneName string) (string, error) {
 		"display": 0, // Primary display
 	}
 
+	fmt.Printf("[CREATE] Creating display source '%s' (type: %s)\n", displaySourceName, displaySourceType)
 	if err := c.CreateSource(sceneName, displaySourceName, displaySourceType, displaySettings); err != nil {
+		fmt.Printf("[ERROR] Failed to create display source: %v\n", err)
 		return "", fmt.Errorf("failed to create display source: %w", err)
 	}
+	fmt.Printf("[SUCCESS] Display source '%s' created\n", displaySourceName)
 
 	return displaySourceName, nil
 }
@@ -216,18 +269,45 @@ func (c *Client) EnsureRequiredSources() error {
 		return fmt.Errorf("failed to get active scene: %w", err)
 	}
 
-	// Check and create audio source if missing
-	_, err = c.CheckAndCreateAudioSource(sceneName)
+	// Get scene sources to log current state
+	sources, err := c.GetSceneSources(sceneName)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list scene sources: %w", err)
 	}
+
+	fmt.Printf("[SOURCES] Active scene: '%s', existing sources: %d\n", sceneName, len(sources))
+	for _, src := range sources {
+		fmt.Printf("[SOURCE_FOUND] %s (type: %s, enabled: %v)\n", src.SourceName, src.SourceType, src.Enabled)
+	}
+
+	// Check and create audio source if missing
+	audioSource, err := c.CheckAndCreateAudioSource(sceneName)
+	if err != nil {
+		return fmt.Errorf("failed to ensure audio source: %w", err)
+	}
+	fmt.Printf("[SOURCE_CHECK] Audio source: %s\n", audioSource)
 
 	// Check and create display source if missing
-	_, err = c.CheckAndCreateDisplaySource(sceneName)
+	displaySource, err := c.CheckAndCreateDisplaySource(sceneName)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to ensure display source: %w", err)
+	}
+	fmt.Printf("[SOURCE_CHECK] Display source: %s\n", displaySource)
+
+	// Validate both sources are now enabled
+	validation, err := c.ValidateRequiredSources(sceneName)
+	if err != nil {
+		return fmt.Errorf("failed to validate sources: %w", err)
 	}
 
+	if !validation.HasAudioInput {
+		return fmt.Errorf("audio source created but not enabled: %s", validation.AudioSourceName)
+	}
+	if !validation.HasDisplayVideo {
+		return fmt.Errorf("display source created but not enabled: %s", validation.VideoSourceName)
+	}
+
+	fmt.Println("[VERIFY] All required sources are present and enabled")
 	return nil
 }
 
