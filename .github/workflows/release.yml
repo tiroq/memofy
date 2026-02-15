@@ -69,6 +69,19 @@ jobs:
           mkdir -p bin
           go build -o "bin/memofy-ui-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-ui/main.go
 
+      - name: Sign binaries (macOS)
+        if: matrix.goos == 'darwin'
+        run: |
+          echo "Signing binaries with ad-hoc signature..."
+          codesign --force --deep --sign - "bin/memofy-core-${{ matrix.artifact_name }}"
+          codesign --force --deep --sign - "bin/memofy-ui-${{ matrix.artifact_name }}"
+          
+          echo "Verifying signatures..."
+          codesign --verify --verbose "bin/memofy-core-${{ matrix.artifact_name }}"
+          codesign --verify --verbose "bin/memofy-ui-${{ matrix.artifact_name }}"
+          
+          echo "✓ Binaries signed successfully"
+
       - name: Create archive
         run: |
           mkdir -p "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
