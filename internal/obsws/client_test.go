@@ -597,7 +597,7 @@ func TestPhase6_ErrorCode203Timeout(t *testing.T) {
 func TestPhase6_ReconnectionWithBackoff(t *testing.T) {
 	// This test verifies the reconnection delay logic
 	client := NewClient("ws://localhost:9999", "") // Invalid port
-	client.reconnectEnabled = false                 // Disable to test delay calculation only
+	client.reconnectEnabled = false                // Disable to test delay calculation only
 
 	// Verify initial reconnect delay
 	testutil.AssertEqual(t, 5*time.Second, client.reconnectDelay, "Initial backoff should be 5s")
@@ -633,7 +633,7 @@ func TestPhase6_ReconnectionWithJitter(t *testing.T) {
 // TestPhase6_ConnectionLossDetection verifies client detects unexpected disconnection
 func TestPhase6_ConnectionLossDetection(t *testing.T) {
 	t.Skip("Skipping: Client's readMessages goroutine detection timing is non-deterministic in tests")
-	
+
 	// This test would verify that the client detects when the server closes unexpectedly.
 	// However, the detection timing depends on internal goroutine scheduling and
 	// WebSocket read timeouts which are non-deterministic in test environments.
