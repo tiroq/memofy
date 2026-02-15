@@ -9,6 +9,10 @@ build:
 	mkdir -p bin
 	$(GO) build -o $(BINARY_CORE) cmd/memofy-core/main.go
 	$(GO) build -o $(BINARY_UI) cmd/memofy-ui/main.go
+	@echo "Signing binaries..."
+	@codesign --force --sign - $(BINARY_CORE) 2>/dev/null || echo "Warning: codesign not available (non-macOS system?)"
+	@codesign --force --sign - $(BINARY_UI) 2>/dev/null || echo "Warning: codesign not available (non-macOS system?)"
+	@echo "✓ Build complete"
 
 clean:
 	rm -rf bin/
