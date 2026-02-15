@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -377,11 +378,19 @@ func (c *Client) sendRequest(requestType string, requestData interface{}) (*Resp
 	select {
 	case resp := <-respChan:
 		if !resp.RequestStatus.Result {
-			return nil, fmt.Errorf("request failed: %s (code %d)", resp.RequestStatus.Comment, resp.RequestStatus.Code)
+			// Enhanced error message with request type for better diagnostics
+			errMsg := fmt.Sprintf("request failed: %s (request: %s, code: %d)", resp.RequestStatus.Comment, requestType, resp.RequestStatus.Code)
+
+			// Special handling for code 204 (invalid request type - likely OBS version mismatch)
+			if resp.RequestStatus.Code == 204 {
+				errMsg = fmt.Sprintf("OBS rejected request type '%s' (code 204: InvalidRequest). This likely indicates an OBS version or plugin compatibility issue. %s", requestType, resp.RequestStatus.Comment)
+			}
+
+			return nil, fmt.Errorf(errMsg)
 		}
 		return resp, nil
 	case <-time.After(10 * time.Second):
-		return nil, fmt.Errorf("request timeout")
+		return nil, fmt.Errorf("request timeout after 10s (request: %s)", requestType)
 	}
 }
 
@@ -402,22 +411,39 @@ func (c *Client) disconnect() {
 	c.updateOBSStatus("disconnected", "")
 }
 
-// reconnect attempts to reconnect with exponential backoff
+// reconnect attempts to reconnect with exponential backoff and jitter
 func (c *Client) reconnect() {
 	delay := c.reconnectDelay
+	attempt := 0
 	for {
 		select {
 		case <-c.stopChan:
 			return
 		case <-time.After(delay):
+			attempt++
+			log.Printf("[RECONNECT] Attempt %d: Retrying connection in %d seconds...", attempt, delay/time.Second)
 			if err := c.Connect(); err == nil {
+				log.Printf("[RECONNECT] Successfully reconnected on attempt %d", attempt)
 				return // Successfully reconnected
 			}
-			// Exponential backoff (max 60s)
-			delay *= 2
+			log.Printf("[RECONNECT] Attempt %d failed, backing off...", attempt)
+
+			// Exponential backoff with jitter to avoid thundering herd
+			delay = delay * 2
 			if delay > 60*time.Second {
 				delay = 60 * time.Second
 			}
+
+			// Add jitter: ±10% of delay
+			jitter := time.Duration((delay.Seconds()*0.2)*(rand.Float64()-0.5)) * time.Second
+			delay = delay + jitter
+
+			// Ensure minimum 1 second delay
+			if delay < time.Second {
+				delay = time.Second
+			}
+
+			log.Printf("[RECONNECT] Next retry in %d seconds (attempt %d)", delay/time.Second, attempt+1)
 		}
 	}
 }
