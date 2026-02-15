@@ -74,9 +74,10 @@ func main() {
 	// Initialize macOS application with timeout protection
 	log.Println("[STARTUP] Initializing macOS application...")
 
-	// Create a timeout context for UI initialization (5 seconds)
+	// Create a timeout context for UI initialization (15 seconds instead of 5)
+	// Increased timeout for slower/older Macs
 	// If UI framework hangs, this will fail fast instead of deadlocking
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	// Use a channel to track initialization status
@@ -94,12 +95,31 @@ func main() {
 			}
 		}()
 
+		// Start heartbeat ticker to show progress during initialization
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+
+		// Initialize the application in a separate layer to detect where it hangs
+		log.Println("[STARTUP] Creating SharedApplication...")
+
+		go func() {
+			for range ticker.C {
+				select {
+				case <-initDone:
+					return
+				default:
+					log.Println("[STARTUP] ...UI initialization in progress...")
+				}
+			}
+		}()
+
 		// Initialize the application
 		app = appkit.Application_SharedApplication()
 		app.SetActivationPolicy(appkit.ApplicationActivationPolicyAccessory)
 		log.Println("[STARTUP] macOS Application initialized")
 
 		// Create status bar app with panic protection
+		log.Println("[STARTUP] Creating status bar app...")
 		statusBarApp = macui.NewStatusBarApp()
 		if statusBarApp == nil {
 			initErr = fmt.Errorf("failed to create status bar app: returned nil")
@@ -116,7 +136,7 @@ func main() {
 	case <-initDone:
 		log.Println("[STARTUP] UI initialization completed")
 	case <-ctx.Done():
-		log.Println("[STARTUP] ERROR: UI initialization timeout (5s) - macOS event loop may be hung")
+		log.Println("[STARTUP] ERROR: UI initialization timeout (15s) - macOS event loop may be hung")
 		wg.Wait()
 		if initErr != nil {
 			log.Printf("[STARTUP] Error during init: %v", initErr)
