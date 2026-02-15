@@ -211,6 +211,13 @@ install_binaries() {
     chmod +x "$INSTALL_DIR/memofy-core"
     chmod +x "$INSTALL_DIR/memofy-ui"
     
+    # Sign binaries on macOS to prevent code signing issues
+    if [[ "$OS" == "Darwin" ]]; then
+        print_info "Signing installed binaries..."
+        codesign --force --sign - "$INSTALL_DIR/memofy-core" 2>/dev/null || print_warn "Could not sign memofy-core (may fail to run)"
+        codesign --force --sign - "$INSTALL_DIR/memofy-ui" 2>/dev/null || print_warn "Could not sign memofy-ui (may fail to run)"
+    fi
+    
     print_success "Binaries installed to $INSTALL_DIR"
 }
 
