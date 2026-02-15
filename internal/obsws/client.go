@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -386,7 +387,7 @@ func (c *Client) sendRequest(requestType string, requestData interface{}) (*Resp
 				errMsg = fmt.Sprintf("OBS rejected request type '%s' (code 204: InvalidRequest). This likely indicates an OBS version or plugin compatibility issue. %s", requestType, resp.RequestStatus.Comment)
 			}
 
-			return nil, fmt.Errorf(errMsg)
+			return nil, errors.New(errMsg)
 		}
 		return resp, nil
 	case <-time.After(10 * time.Second):
