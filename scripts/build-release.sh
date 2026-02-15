@@ -73,6 +73,15 @@ build_macos() {
         -ldflags "-X main.Version=$VERSION" \
         cmd/memofy-ui/main.go
     
+    # Sign macOS binaries with ad-hoc signature
+    echo "Signing binaries..."
+    codesign --force --deep --sign - "$output_dir/memofy-core"
+    codesign --force --deep --sign - "$output_dir/memofy-ui"
+    
+    # Verify signatures
+    codesign --verify --verbose "$output_dir/memofy-core" 2>&1 | grep -q "valid on disk" && echo "✓ memofy-core signed"
+    codesign --verify --verbose "$output_dir/memofy-ui" 2>&1 | grep -q "valid on disk" && echo "✓ memofy-ui signed"
+    
     # Copy supporting files
     cp README.md "$output_dir/"
     cp LICENSE "$output_dir/"
