@@ -17,6 +17,7 @@ import (
 	"github.com/tiroq/memofy/internal/obsws"
 	"github.com/tiroq/memofy/internal/pidfile"
 	"github.com/tiroq/memofy/internal/statemachine"
+	"github.com/tiroq/memofy/internal/validation"
 )
 
 const (
@@ -131,6 +132,25 @@ func main() {
 
 	obsVersion, wsVersion, _ := obsClient.GetVersion()
 	outLog.Printf("[STARTUP] Connected to OBS %s (WebSocket %s)", obsVersion, wsVersion)
+
+	// Validate OBS compatibility
+	outLog.Println("[STARTUP] Validating OBS compatibility...")
+	healthCheck := validation.CheckOBSHealth(obsVersion, wsVersion)
+	outLog.Printf("[STARTUP] OBS Health: %s", healthCheck.Message)
+	if !healthCheck.OK {
+		errLog.Println("[STARTUP] WARNING: OBS compatibility check found issues:")
+		for _, issue := range healthCheck.Issues {
+			errLog.Printf("  - %s", issue)
+		}
+		errLog.Println("")
+		errLog.Println("Suggested fixes:")
+		for _, fix := range healthCheck.Fixes {
+			errLog.Printf("  - %s", fix)
+		}
+		errLog.Println("")
+		errLog.Println("Continuing anyway, but recording may not work properly.")
+		errLog.Println("Run 'memofy-ctl diagnose' for more information.")
+	}
 
 	// Validate and create required sources (audio + display capture)
 	outLog.Println("[STARTUP] Checking OBS recording sources...")
