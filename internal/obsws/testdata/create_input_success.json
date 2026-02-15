@@ -1,0 +1,21 @@
+{
+  "op": 7,
+  "d": {
+    "requestType": "CreateInput",
+    "requestId": "test-request-id",
+    "requestStatus": {
+      "result": true,
+      "code": 100,
+      "comment": ""
+    },
+    "responseData": {
+      "sceneItemId": 123,
+      "inputUuid": "test-uuid-12345",
+      "inputName": "Memofy Display Capture",
+      "inputKind": "screen_capture",
+      "inputSettings": {
+        "Enabled": true
+      }
+    }
+  }
+}

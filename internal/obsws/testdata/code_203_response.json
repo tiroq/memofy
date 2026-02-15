@@ -1,0 +1,12 @@
+{
+  "op": 7,
+  "d": {
+    "requestType": "GetSceneList",
+    "requestId": "test-request-id",
+    "requestStatus": {
+      "result": false,
+      "code": 203,
+      "comment": "Processing of the request failed unexpectedly."
+    }
+  }
+}

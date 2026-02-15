@@ -1,0 +1,12 @@
+{
+  "op": 7,
+  "d": {
+    "requestType": "CreateInput",
+    "requestId": "test-request-id",
+    "requestStatus": {
+      "result": false,
+      "code": 204,
+      "comment": "The request type is not valid or is not implemented."
+    }
+  }
+}

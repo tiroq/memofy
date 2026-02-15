@@ -1,0 +1,23 @@
+{
+  "op": 7,
+  "d": {
+    "requestType": "GetSceneList",
+    "requestId": "test-request-id",
+    "requestStatus": {
+      "result": true,
+      "code": 100,
+      "comment": ""
+    },
+    "responseData": {
+      "currentProgramSceneName": "Collection 1",
+      "currentPreviewSceneName": null,
+      "scenes": [
+        {
+          "sceneIndex": 0,
+          "sceneName": "Collection 1",
+          "sceneUuid": "test-scene-uuid-1"
+        }
+      ]
+    }
+  }
+}

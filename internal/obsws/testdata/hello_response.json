@@ -1,0 +1,15 @@
+{
+  "op": 0,
+  "d": {
+    "obsWebSocketVersion": "5.0.5",
+    "rpcVersion": 1,
+    "authentication": {
+      "challenge": "test-challenge-string",
+      "salt": "test-salt-string"
+    },
+    "negotiatedRpcVersion": 1,
+    "obsVersion": "29.1.3",
+    "platform": "macos",
+    "platformDescription": "macOS 14.0"
+  }
+}
