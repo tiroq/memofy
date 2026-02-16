@@ -154,30 +154,52 @@ tasks:
       - echo "✓ Ready for release"
 
   release-tag:
-    desc: 'Create and push a release tag (usage: task release-tag VERSION=v0.2.0)'
+    desc: 'Create and push a release tag (auto-bumps patch if no VERSION provided)'
     deps: [release-check]
+    vars:
+      TAG_VERSION:
+        sh: |
+          if [ -n "{{.VERSION}}" ]; then
+            echo "{{.VERSION}}"
+            exit 0
+          fi
+          latest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+          latest=${latest#v}
+          if [ -z "$latest" ]; then
+            echo "v0.0.1"
+            exit 0
+          fi
+          major=$(echo "$latest" | cut -d. -f1)
+          minor=$(echo "$latest" | cut -d. -f2)
+          patch=$(echo "$latest" | cut -d. -f3)
+          patch=$((patch+1))
+          echo "v$major.$minor.$patch"
     preconditions:
-      - sh: '[ -n "{{.VERSION}}" ]'
-        msg: 'VERSION variable is required. Usage: task release-tag VERSION=v0.2.0'
-      - sh: 'echo "{{.VERSION}}" | grep -qE "^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$"'
+      - sh: 'echo "{{.TAG_VERSION}}" | grep -qE "^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$"'
         msg: 'VERSION must follow semantic versioning: v0.2.0 or v0.2.0-rc1'
     cmds:
-      - echo "→ Creating tag {{.VERSION}}..."
-      - git tag -a {{.VERSION}} -m "Release {{.VERSION}}"
+      - echo "→ Creating tag {{.TAG_VERSION}}..."
+      - git tag -a {{.TAG_VERSION}} -m "Release {{.TAG_VERSION}}"
       - echo "→ Pushing tag to GitHub..."
-      - git push origin main {{.VERSION}}
-      - echo "✓ Tag {{.VERSION}} created and pushed"
+      - git push origin main {{.TAG_VERSION}}
+      - echo "✓ Tag {{.TAG_VERSION}} created and pushed"
       - echo "✓ GitHub Actions will now build and publish the release"
       - 'echo "→ View workflow: https://github.com/{{.REPO_OWNER}}/{{.REPO_NAME}}/actions"'
       - task: release-verify
-        vars:
-          VERSION: '{{.VERSION}}'
 
   release-verify:
-    desc: 'Verify release workflow succeeded for a tag (usage: task release-verify VERSION=v0.2.0)'
+    desc: 'Verify release workflow succeeded (auto-detects latest tag if no VERSION provided)'
+    vars:
+      CHECK_VERSION:
+        sh: |
+          if [ -n "{{.VERSION}}" ]; then
+            echo "{{.VERSION}}"
+          else
+            git describe --tags --abbrev=0 2>/dev/null || echo ""
+          fi
     preconditions:
-      - sh: '[ -n "{{.VERSION}}" ]'
-        msg: 'VERSION variable is required. Usage: task release-verify VERSION=v0.2.0'
+      - sh: '[ -n "{{.CHECK_VERSION}}" ]'
+        msg: 'No VERSION provided and no tags found in repository'
     cmds:
       - |
         if ! command -v gh >/dev/null 2>&1; then
@@ -187,13 +209,13 @@ tasks:
         fi
         # Get repo owner/name from git remote
         repo=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || git config --get remote.origin.url | sed -E 's|.*/([^/]+/[^/]+)(\.git)?$|\1|')
-        echo "→ Waiting for release workflow to start for {{.VERSION}}..."
+        echo "→ Waiting for release workflow to start for {{.CHECK_VERSION}}..."
         attempts=0
         run_id=""
         while [ $attempts -lt 30 ]; do
           # Use gh api to get workflow runs for the specific tag ref
           run_id=$(gh api "repos/$repo/actions/workflows/release.yml/runs?event=push&per_page=20" \
-            --jq '.workflow_runs[] | select(.head_branch == "{{.VERSION}}") | .id' \
+            --jq '.workflow_runs[] | select(.head_branch == "{{.CHECK_VERSION}}") | .id' \
             | head -1)
           if [ -n "$run_id" ]; then
             break
@@ -202,7 +224,7 @@ tasks:
           sleep 5
         done
         if [ -z "$run_id" ]; then
-          echo "❌ Could not find a release workflow run for {{.VERSION}}."
+          echo "❌ Could not find a release workflow run for {{.CHECK_VERSION}}."
           exit 1
         fi
         echo "→ Monitoring release workflow run $run_id..."
@@ -212,10 +234,10 @@ tasks:
           conclusion=$(echo "$run_data" | jq -r '.conclusion')
           if [ "$status" = "completed" ]; then
             if [ "$conclusion" = "success" ]; then
-              echo "✓ Release workflow succeeded for {{.VERSION}}."
+              echo "✓ Release workflow succeeded for {{.CHECK_VERSION}}."
               exit 0
             fi
-            echo "❌ Release workflow failed for {{.VERSION}} (conclusion: $conclusion)."
+            echo "❌ Release workflow failed for {{.CHECK_VERSION}} (conclusion: $conclusion)."
             gh run view "$run_id" --web || true
             exit 1
           fi
@@ -233,9 +255,9 @@ tasks:
             echo "1.0.0"
             exit 0
           fi
-          IFS=. read -r major minor patch <<EOF
-          $latest
-          EOF
+          major=$(echo "$latest" | cut -d. -f1)
+          minor=$(echo "$latest" | cut -d. -f2)
+          patch=$(echo "$latest" | cut -d. -f3)
           major=$((major+1))
           minor=0
           patch=0
@@ -256,9 +278,9 @@ tasks:
             echo "0.1.0"
             exit 0
           fi
-          IFS=. read -r major minor patch <<EOF
-          $latest
-          EOF
+          major=$(echo "$latest" | cut -d. -f1)
+          minor=$(echo "$latest" | cut -d. -f2)
+          patch=$(echo "$latest" | cut -d. -f3)
           minor=$((minor+1))
           patch=0
           echo "$major.$minor.$patch"
@@ -278,9 +300,9 @@ tasks:
             echo "0.0.1"
             exit 0
           fi
-          IFS=. read -r major minor patch <<EOF
-          $latest
-          EOF
+          major=$(echo "$latest" | cut -d. -f1)
+          minor=$(echo "$latest" | cut -d. -f2)
+          patch=$(echo "$latest" | cut -d. -f3)
           patch=$((patch+1))
           echo "$major.$minor.$patch"
     cmds:
@@ -288,7 +310,7 @@ tasks:
         vars:
           VERSION: 'v{{.NEXT_VERSION}}'
 
-  release-alpha-auto:
+  release-alpha:
     desc: 'Auto-create next alpha tag from latest stable (no args)'
     vars:
       BASE_VERSION:
@@ -320,7 +342,7 @@ tasks:
         vars:
           VERSION: '{{.NEXT_VERSION}}'
 
-  release-beta-auto:
+  release-beta:
     desc: 'Auto-create next beta tag from latest stable (no args)'
     vars:
       BASE_VERSION:
@@ -331,9 +353,9 @@ tasks:
             echo "0.1.0"
             exit 0
           fi
-          IFS=. read -r major minor patch <<EOF
-          $latest
-          EOF
+          major=$(echo "$latest" | cut -d. -f1)
+          minor=$(echo "$latest" | cut -d. -f2)
+          patch=$(echo "$latest" | cut -d. -f3)
           patch=$((patch+1))
           echo "$major.$minor.$patch"
       NEXT_VERSION:
@@ -353,40 +375,65 @@ tasks:
           VERSION: '{{.NEXT_VERSION}}'
 
   release-stable:
-    desc: 'Create and push a stable release tag (usage: task release-stable VERSION=0.2.0)'
+    desc: 'Auto-promote latest prerelease to stable, or bump patch if no prerelease exists'
     vars:
-      TAG: v{{.VERSION}}
+      NEXT_STABLE:
+        sh: |
+          # Check for latest prerelease (rc, beta, alpha)
+          prerelease=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*-*' | sort -V | tail -1)
+          if [ -n "$prerelease" ]; then
+            # Strip prerelease suffix to get stable version
+            echo "${prerelease%%-*}"
+            exit 0
+          fi
+          # No prerelease, bump patch from latest stable
+          latest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+          latest=${latest#v}
+          if [ -z "$latest" ]; then
+            echo "v0.1.0"
+            exit 0
+          fi
+          major=$(echo "$latest" | cut -d. -f1)
+          minor=$(echo "$latest" | cut -d. -f2)
+          patch=$(echo "$latest" | cut -d. -f3)
+          patch=$((patch+1))
+          echo "v$major.$minor.$patch"
     cmds:
       - task: release-tag
         vars:
-          VERSION: '{{.TAG}}'
+          VERSION: '{{.NEXT_STABLE}}'
 
   release-rc:
-    desc: 'Create and push a release candidate tag (usage: task release-rc VERSION=0.2.0 RC=1)'
+    desc: 'Auto-create next RC tag (increments RC number or creates rc1 for next patch)'
     vars:
-      TAG: v{{.VERSION}}-rc{{.RC | default "1"}}
+      BASE_VERSION:
+        sh: |
+          latest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+          latest=${latest#v}
+          if [ -z "$latest" ]; then
+            echo "0.1.0"
+            exit 0
+          fi
+          major=$(echo "$latest" | cut -d. -f1)
+          minor=$(echo "$latest" | cut -d. -f2)
+          patch=$(echo "$latest" | cut -d. -f3)
+          patch=$((patch+1))
+          echo "$major.$minor.$patch"
+      NEXT_RC:
+        sh: |
+          base="{{.BASE_VERSION}}"
+          latest=$(git tag -l "v${base}-rc*" | sort -V | tail -1)
+          if [ -z "$latest" ]; then
+            echo "v${base}-rc1"
+            exit 0
+          fi
+          n=${latest##*rc}
+          n=$((n+1))
+          echo "v${base}-rc${n}"
     cmds:
       - task: release-tag
         vars:
-          VERSION: '{{.TAG}}'
-
-  release-beta:
-    desc: 'Create and push a beta release tag (usage: task release-beta VERSION=0.2.0 BETA=1)'
-    vars:
-      TAG: v{{.VERSION}}-beta{{.BETA | default "1"}}
-    cmds:
-      - task: release-tag
-        vars:
-          VERSION: '{{.TAG}}'
-
-  release-alpha:
-    desc: 'Create and push an alpha release tag (usage: task release-alpha VERSION=0.2.0 ALPHA=1)'
-    vars:
-      TAG: v{{.VERSION}}-alpha{{.ALPHA | default "1"}}
-    cmds:
-      - task: release-tag
-        vars:
-          VERSION: '{{.TAG}}'
+          VERSION: '{{.NEXT_RC}}'
 
   release-delete:
     desc: 'Delete a release tag (local and remote) (usage: task release-delete VERSION=v0.2.0)'
