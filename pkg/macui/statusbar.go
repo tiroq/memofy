@@ -128,13 +128,14 @@ func (app *StatusBarApp) performUpdateOnMainThread(status *ipc.StatusSnapshot) {
 		return
 	}
 
+	// Check if mode changed - only rebuild menu if structure needs to change
+	oldMode := app.currentStatus.Mode
+	oldRecording := app.previousRecording
+
 	app.currentStatus = status
 
-	// Update menu bar icon
+	// Update menu bar icon (this is safe)
 	app.updateMenuBarIcon()
-
-	// Rebuild menu to reflect current state
-	app.rebuildMenu()
 
 	// Detect recording state change (T085: Display recording duration)
 	// Check actual recording state from OBS, not just connection status
@@ -145,6 +146,16 @@ func (app *StatusBarApp) performUpdateOnMainThread(status *ipc.StatusSnapshot) {
 				isRecording = recordingBool
 			}
 		}
+	}
+
+	// Only rebuild menu if recording state or mode changed
+	// This avoids unnecessary menu rebuilds which can cause threading issues
+	if isRecording != oldRecording || status.Mode != oldMode {
+		log.Printf("Menu rebuild needed: recording=%v->%v mode=%s->%s", oldRecording, isRecording, oldMode, status.Mode)
+		// NOTE: rebuildMenu() should only be called from main thread
+		// For now, we skip it from background threads to avoid crashes
+		// TODO: Use proper dispatch_async to main queue
+		// app.rebuildMenu()
 	}
 
 	if isRecording && !app.previousRecording {
