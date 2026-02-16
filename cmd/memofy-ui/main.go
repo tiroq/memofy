@@ -100,7 +100,7 @@ func main() {
 
 	// Create status bar app
 	log.Println("[STARTUP] Creating status bar app...")
-	statusBarApp = macui.NewStatusBarApp()
+	statusBarApp = macui.NewStatusBarApp(Version)
 	if statusBarApp == nil {
 		log.Fatal("[STARTUP] ERROR: failed to create status bar app: returned nil")
 	}
