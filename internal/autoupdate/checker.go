@@ -463,11 +463,14 @@ func normalizeVersion(version string) string {
 	// Look for pattern: X.Y.Z or X.Y.Z-suffix
 	// Strip git describe metadata (everything after digit-gHASH pattern)
 
-	// First, check if it matches git describe format (e.g., "0.3.0-2-g5ea24ba-dirty")
-	// Format: TAG-COMMITS-gHASH[-dirty]
+	// First remove "-dirty" suffix if present
+	version = strings.TrimSuffix(version, "-dirty")
+
+	// Check if it matches git describe format (e.g., "0.3.0-2-g5ea24ba")
+	// Format: TAG-COMMITS-gHASH
 	parts := strings.Split(version, "-")
 	if len(parts) >= 3 {
-		// Check if second-to-last or third element matches "gHASH" pattern
+		// Check if any element matches "gHASH" pattern
 		for i := 1; i < len(parts); i++ {
 			if strings.HasPrefix(parts[i], "g") && len(parts[i]) > 1 {
 				// This looks like git hash, return everything before the commit count
