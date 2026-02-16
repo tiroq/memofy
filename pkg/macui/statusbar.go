@@ -37,7 +37,7 @@ func (app *StatusBarApp) GetCurrentStatus() *ipc.StatusSnapshot {
 }
 
 // NewStatusBarApp creates and initializes the menu bar application
-func NewStatusBarApp() *StatusBarApp {
+func NewStatusBarApp(version string) *StatusBarApp {
 	log.Println("✓ StatusBarApp initialized")
 	log.Println("  Control commands:")
 	log.Println("    echo 'start' > ~/.cache/memofy/cmd.txt   (force start)")
@@ -47,7 +47,8 @@ func NewStatusBarApp() *StatusBarApp {
 	log.Println("  Status: cat ~/.cache/memofy/status.json")
 
 	installDir := filepath.Join(os.Getenv("HOME"), ".local", "bin")
-	checker := autoupdate.NewUpdateChecker("tiroq", "memofy", "0.1.0", installDir)
+	log.Printf("  Current version: %s", version)
+	checker := autoupdate.NewUpdateChecker("tiroq", "memofy", version, installDir)
 
 	// Set release channel based on config
 	cfg, err := config.LoadDetectionRules()
@@ -235,6 +236,8 @@ func (app *StatusBarApp) rebuildMenu() {
 	autoItem.SetTitle("🔄 Auto Mode")
 	if status.Mode == ipc.ModeAuto {
 		autoItem.SetState(appkit.OnState)
+	} else {
+		autoItem.SetState(appkit.OffState)
 	}
 	action.Set(autoItem, app.SetAutoMode)
 	app.menu.AddItem(autoItem)
@@ -243,6 +246,8 @@ func (app *StatusBarApp) rebuildMenu() {
 	pauseItem.SetTitle("⏸ Pause Detection")
 	if status.Mode == ipc.ModePaused {
 		pauseItem.SetState(appkit.OnState)
+	} else {
+		pauseItem.SetState(appkit.OffState)
 	}
 	action.Set(pauseItem, app.SetPauseMode)
 	app.menu.AddItem(pauseItem)
