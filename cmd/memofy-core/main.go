@@ -382,6 +382,23 @@ func writeStatus(sm *statemachine.StateMachine, detection *detector.DetectionSta
 	return ipc.WriteStatus(&status)
 }
 
+// updateStatusMode updates only the mode in status.json, preserving detection state
+func updateStatusMode(sm *statemachine.StateMachine, obs *obsws.Client) error {
+	// Read current status
+	status, err := ipc.ReadStatus()
+	if err != nil {
+		// If status doesn't exist yet, create a new one with empty detection
+		return writeStatus(sm, &detector.DetectionState{}, obs)
+	}
+
+	// Update only the mode and timestamp
+	status.Mode = sm.CurrentMode()
+	status.Timestamp = time.Now()
+	status.OBSConnected = obs.IsConnected()
+
+	return ipc.WriteStatus(status)
+}
+
 // watchCommands monitors cmd.txt for manual control commands
 func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 	cmdPath := filepath.Join(os.Getenv("HOME"), ".cache", "memofy", "cmd.txt")
@@ -515,10 +532,18 @@ func handleCommand(cmd ipc.Command, sm *statemachine.StateMachine, obs *obsws.Cl
 	case ipc.CmdAuto:
 		sm.SetMode(ipc.ModeAuto)
 		outLog.Println("Mode changed to AUTO")
+		// Immediately update status so UI reflects the change
+		if err := updateStatusMode(sm, obs); err != nil {
+			errLog.Printf("Failed to write status after mode change: %v", err)
+		}
 
 	case ipc.CmdPause:
 		sm.SetMode(ipc.ModePaused)
 		outLog.Println("Mode changed to PAUSED")
+		// Immediately update status so UI reflects the change
+		if err := updateStatusMode(sm, obs); err != nil {
+			errLog.Printf("Failed to write status after mode change: %v", err)
+		}
 
 	case ipc.CmdToggle:
 		// Toggle recording state: if recording, stop; else start
