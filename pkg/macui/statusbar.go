@@ -241,10 +241,9 @@ func (app *StatusBarApp) updateMenuBarIcon() {
 // rebuildMenu reconstructs the menu based on current status
 // This is called when the menu is opened, which always happens on the main thread
 func (app *StatusBarApp) rebuildMenu() {
-	log.Printf("[DEBUG] rebuildMenu called")
 	// Apply any pending updates before rebuilding (safe since we're on main thread when menu opens)
 	if app.HasPendingUpdate() {
-		log.Printf("[DEBUG] Found pending update, applying before rebuild")
+		log.Printf("[DEBUG] ✓ Menu click detected - applying pending update on main thread")
 		app.ApplyPendingUpdate()
 		// ApplyPendingUpdate may call rebuildMenu again, so return to avoid double rebuild
 		return
