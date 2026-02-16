@@ -23,7 +23,7 @@ func TestMain(m *testing.M) {
 // TestMenuBarIconStateChanges verifies icon changes when status changes (T086)
 func TestMenuBarIconStateChanges(t *testing.T) {
 	t.Skip("Skipping GUI test - requires main thread for NSWindow creation")
-	app := macui.NewStatusBarApp()
+	app := macui.NewStatusBarApp("v0.3.0-test")
 
 	tests := []struct {
 		name           string
@@ -97,7 +97,7 @@ func TestMenuBarIconStateChanges(t *testing.T) {
 func TestControlCommandsWriteToFile(t *testing.T) {
 	t.Skip("Skipping test that requires daemon integration and modifies real cache directory")
 
-	app := macui.NewStatusBarApp()
+	app := macui.NewStatusBarApp("v0.3.0-test")
 
 	// Create temporary cache directory
 	cacheDir := filepath.Join(os.TempDir(), "memofy-test-cache")
@@ -263,7 +263,7 @@ func TestSettingsSaveValidation(t *testing.T) {
 // TestErrorNotification verifies error notification display (T089)
 func TestErrorNotification(t *testing.T) {
 	t.Skip("Skipping test that requires GUI interaction - SendErrorNotification displays blocking dialog")
-	app := macui.NewStatusBarApp()
+	app := macui.NewStatusBarApp("v0.3.0-test")
 
 	// Create a status with an error
 	errorStatus := &ipc.StatusSnapshot{
@@ -290,7 +290,7 @@ func TestErrorNotification(t *testing.T) {
 // TestStatusDisplayFormat verifies status display format (T085)
 func TestStatusDisplayFormat(t *testing.T) {
 	t.Skip("Skipping GUI test - requires main thread for NSWindow creation")
-	app := macui.NewStatusBarApp()
+	app := macui.NewStatusBarApp("v0.3.0-test")
 
 	// Initialize with a status
 	status := &ipc.StatusSnapshot{
@@ -323,7 +323,7 @@ func TestStatusDisplayFormat(t *testing.T) {
 // TestMenuItemVisibility verifies all menu methods work without panic (T073-T079)
 func TestMenuItemVisibility(t *testing.T) {
 	t.Skip("Skipping GUI test - requires main thread for NSWindow creation")
-	app := macui.NewStatusBarApp()
+	app := macui.NewStatusBarApp("v0.3.0-test")
 
 	// Initialize status first
 	status := &ipc.StatusSnapshot{
