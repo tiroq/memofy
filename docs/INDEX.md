@@ -82,6 +82,9 @@ You're building **Phase 6: Integration Testing** for Memofy (Go project). This d
 ### "What to do if tests hang/fail?"
 → [GO_IMPLEMENTATION_ROADMAP.md](GO_IMPLEMENTATION_ROADMAP.md#debugging-tips)
 
+### "Binary gets killed on macOS?"
+→ [CODE_SIGNING.md](CODE_SIGNING.md) (Code signing fix for pipeline binaries)
+
 ### "What are the success criteria?"
 → [PHASE6_STATUS.md](PHASE6_STATUS.md#deployment-readiness) or [PHASE6_QUICK_REFERENCE.md](PHASE6_QUICK_REFERENCE.md#success-criteria)
 
@@ -100,6 +103,7 @@ You're building **Phase 6: Integration Testing** for Memofy (Go project). This d
 | [STARTUP_SEQUENCE.md](STARTUP_SEQUENCE.md) | Startup timeline 0-25s (user guide) | 350 lines | 15 min |
 | [PROCESS_LIFECYCLE.md](PROCESS_LIFECYCLE.md) | Process state machines (user guide) | 400 lines | 20 min |
 | [OBS_INTEGRATION.md](OBS_INTEGRATION.md) | WebSocket protocol (reference) | 500 lines | 25 min |
+| [CODE_SIGNING.md](CODE_SIGNING.md) | macOS code signing for binaries | 200 lines | 10 min |
 
 **Total Reading Time**: 2.5 hours for everything, or 50 minutes for essential docs only
 
