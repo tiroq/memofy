@@ -397,35 +397,44 @@ setup_obs() {
 start_ui() {
     print_info "Starting Memofy menu bar UI..."
     
-    # Use helper script if available for better process management
-    if [ -f "scripts/memofy-ctl.sh" ]; then
-        bash scripts/memofy-ctl.sh stop ui
+    # Use helper script if available for better process management  
+    if [ -f "$INSTALL_DIR/memofy-ctl" ]; then
+        "$INSTALL_DIR/memofy-ctl" stop ui 2>/dev/null || true
     else
         # Kill any existing instances gracefully (SIGTERM allows defer cleanup)
         if pgrep -q memofy-ui; then
             killall memofy-ui 2>/dev/null || true
             sleep 2  # Wait for graceful shutdown
         fi
-        
-        # Clean up any remaining PID files (in case of forced kill)
-        rm -f "$HOME/.cache/memofy/memofy-ui.pid" 2>/dev/null || true
     fi
+    
+    # Clean up any stale PID files
+    rm -f "$HOME/.cache/memofy/memofy-ui.pid" 2>/dev/null || true
     
     # Start daemon if not running
     launchctl start com.memofy.core 2>/dev/null || true
     
-    # Start UI with proper GUI context for menu bar
-    # Using nohup and redirecting output to allow menu bar access
-    nohup "$INSTALL_DIR/memofy-ui" > /tmp/memofy-ui.out.log 2>&1 &
-    
-    sleep 2
-    
-    # Verify it's running
-    if pgrep -q memofy-ui; then
-        print_success "Memofy is running in menu bar"
+    # Start UI (no need for nohup, memofy-ctl handles backgrounding)
+    if [ -f "$INSTALL_DIR/memofy-ctl" ]; then
+        "$INSTALL_DIR/memofy-ctl" start ui
     else
-        print_warn "Menu bar UI started, but may need manual launch"
-        echo "  Run manually: ~/.local/bin/memofy-ui"
+        # Fallback: start directly in background
+        "$INSTALL_DIR/memofy-ui" >> /tmp/memofy-ui.out.log 2>&1 &
+    fi
+    
+    sleep 3
+    
+    # Verify it's running (check actual process, not just PID file)
+    if pgrep -q memofy-ui; then
+        print_success "Memofy is running in menu bar (look for the icon ⚫ at the top of your screen)"
+    else
+        print_error "Menu bar UI failed to start"
+        print_info "Checking logs..."
+        if [ -f /tmp/memofy-ui.out.log ]; then
+            tail -10 /tmp/memofy-ui.out.log | grep -i "error\|fatal\|panic" || print_warn "No obvious errors in logs"
+        fi
+        print_info "Try running manually to see errors: ~/.local/bin/memofy-ui"
+        return 1
     fi
 }
 
