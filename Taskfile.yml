@@ -186,6 +186,8 @@ tasks:
       - echo "✓ GitHub Actions will now build and publish the release"
       - 'echo "→ View workflow: https://github.com/{{.REPO_OWNER}}/{{.REPO_NAME}}/actions"'
       - task: release-verify
+        vars:
+          VERSION: '{{.TAG_VERSION}}'
 
   release-verify:
     desc: 'Verify release workflow succeeded (auto-detects latest tag if no VERSION provided)'
