@@ -102,6 +102,21 @@ func (app *StatusBarApp) createStatusBar() {
 
 // UpdateStatus refreshes the UI based on current status
 func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
+	// CRITICAL: All GUI updates must happen on main thread for macOS AppKit
+	// Schedule the actual update on the main dispatch queue
+	if status == nil {
+		return
+	}
+
+	// Store status for main thread to access
+	app.currentStatus = status
+
+	// Perform the update on the main thread
+	app.performUpdateOnMainThread(status)
+}
+
+// performUpdateOnMainThread handles the actual UI update logic
+func (app *StatusBarApp) performUpdateOnMainThread(status *ipc.StatusSnapshot) {
 	if app.currentStatus == nil {
 		// First update - show initial notification
 		app.currentStatus = status
