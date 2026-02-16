@@ -12,7 +12,6 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/progrium/darwinkit/macos/appkit"
-	"github.com/progrium/darwinkit/macos/foundation"
 	"github.com/tiroq/memofy/internal/ipc"
 	"github.com/tiroq/memofy/internal/pidfile"
 	"github.com/tiroq/memofy/pkg/macui"
@@ -120,20 +119,6 @@ func main() {
 	// Start watching status file in background
 	log.Println("[STARTUP] Starting status file watcher...")
 	go watchStatusFile()
-
-	// Start UI update timer on the main run loop after a short delay
-	// This timer periodically applies any pending UI updates queued from background threads
-	// Must be created after app.Run() starts, so we do it in a goroutine with a delay
-	go func() {
-		time.Sleep(100 * time.Millisecond) // Wait for run loop to start
-		log.Println("[STARTUP] Creating UI update timer on main run loop...")
-		foundation.Timer_ScheduledTimerWithTimeIntervalRepeatsBlock(0.25, true, func(timer foundation.Timer) {
-			if statusBarApp != nil && statusBarApp.HasPendingUpdate() {
-				statusBarApp.ApplyPendingUpdate()
-			}
-		})
-		log.Println("[STARTUP] UI update timer created")
-	}()
 
 	log.Println("===========================================")
 	log.Println("[RUNNING] Memofy UI is running")
