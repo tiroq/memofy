@@ -1,5 +1,4 @@
 package autoupdate
-package autoupdate
 
 import "testing"
 
