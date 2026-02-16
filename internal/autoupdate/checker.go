@@ -171,6 +171,9 @@ func (uc *UpdateChecker) IsUpdateAvailable() (bool, *Release, error) {
 	latestVer := strings.TrimPrefix(release.TagName, "v")
 	currentVer := strings.TrimPrefix(uc.currentVersion, "v")
 
+	// Normalize current version by removing git metadata (e.g., "0.3.0-2-g5ea24ba-dirty" -> "0.3.0")
+	currentVer = normalizeVersion(currentVer)
+
 	if isNewer(latestVer, currentVer) {
 		return true, release, nil
 	}
@@ -451,6 +454,30 @@ func isNewer(version1, version2 string) bool {
 	}
 
 	return len(parts1) > len(parts2)
+}
+
+// normalizeVersion removes git metadata from version strings
+// Converts "0.3.0-2-g5ea24ba-dirty" to "0.3.0"
+// Handles formats: X.Y.Z, X.Y.Z-rc1, X.Y.Z-N-gHASH-dirty
+func normalizeVersion(version string) string {
+	// Look for pattern: X.Y.Z or X.Y.Z-suffix
+	// Strip git describe metadata (everything after digit-gHASH pattern)
+
+	// First, check if it matches git describe format (e.g., "0.3.0-2-g5ea24ba-dirty")
+	// Format: TAG-COMMITS-gHASH[-dirty]
+	parts := strings.Split(version, "-")
+	if len(parts) >= 3 {
+		// Check if second-to-last or third element matches "gHASH" pattern
+		for i := 1; i < len(parts); i++ {
+			if strings.HasPrefix(parts[i], "g") && len(parts[i]) > 1 {
+				// This looks like git hash, return everything before the commit count
+				return parts[0]
+			}
+		}
+	}
+
+	// If no git metadata, return as-is
+	return version
 }
 
 // isIntelMac checks if running on Intel Mac
