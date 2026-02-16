@@ -29,6 +29,9 @@ type StatusBarApp struct {
 	previousRecording  bool
 	recordingStartTime time.Time
 	updateChecker      *autoupdate.UpdateChecker
+	// Timer-based UI update mechanism (safe for main-thread execution)
+	pendingUpdate bool
+	pendingStatus *ipc.StatusSnapshot
 }
 
 // GetCurrentStatus returns the current status snapshot (for testing)
@@ -115,16 +118,37 @@ func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
 	app.performUpdateOnMainThread(status)
 }
 
-// performUpdateOnMainThread handles the actual UI update logic
-// WARNING: This function modifies AppKit GUI elements and MUST be called from the main thread only.
-// Currently called from background fsnotify goroutine which causes SIGILL/SIGTRAP crashes!
+// performUpdateOnMainThread handles status updates from background threads
+// This runs on background thread and just queues the update for main thread processing
 func (app *StatusBarApp) performUpdateOnMainThread(status *ipc.StatusSnapshot) {
+	if status == nil {
+		return
+	}
+
+	// Queue the update to be processed by the main thread timer
+	app.pendingUpdate = true
+	app.pendingStatus = status
+}
+
+// HasPendingUpdate returns true if there's a UI update waiting to be applied
+func (app *StatusBarApp) HasPendingUpdate() bool {
+	return app.pendingUpdate
+}
+
+// ApplyPendingUpdate applies queued UI updates - MUST be called from main thread only
+func (app *StatusBarApp) ApplyPendingUpdate() {
+	if !app.pendingUpdate || app.pendingStatus == nil {
+		return
+	}
+
+	status := app.pendingStatus
+	app.pendingUpdate = false
+
 	if app.currentStatus == nil {
 		// First update - show initial notification
 		app.currentStatus = status
-		// DISABLED: GUI updates from background thread cause crashes
-		// app.updateMenuBarIcon()
-		// app.rebuildMenu()
+		app.updateMenuBarIcon()
+		app.rebuildMenu()
 		if err := SendNotification("Memofy", "Monitoring Active", "Automatic meeting detector started"); err != nil {
 			log.Printf("Warning: failed to send notification: %v", err)
 		}
@@ -137,8 +161,8 @@ func (app *StatusBarApp) performUpdateOnMainThread(status *ipc.StatusSnapshot) {
 
 	app.currentStatus = status
 
-	// DISABLED: GUI operations from background thread cause crashes on macOS
-	// app.updateMenuBarIcon()
+	// Update menu bar icon (safe - called from main thread)
+	app.updateMenuBarIcon()
 
 	// Detect recording state change (T085: Display recording duration)
 	// Check actual recording state from OBS, not just connection status
@@ -151,10 +175,11 @@ func (app *StatusBarApp) performUpdateOnMainThread(status *ipc.StatusSnapshot) {
 		}
 	}
 
-	// Log status changes (GUI updates disabled due to threading issues)
+	// Rebuild menu if recording state or mode changed
 	if isRecording != oldRecording || status.Mode != oldMode {
 		log.Printf("Status changed: recording=%v->%v mode=%s->%s",
 			oldRecording, isRecording, oldMode, status.Mode)
+		app.rebuildMenu()
 	}
 
 	if isRecording && !app.previousRecording {
@@ -200,9 +225,7 @@ func (app *StatusBarApp) performUpdateOnMainThread(status *ipc.StatusSnapshot) {
 }
 
 // updateMenuBarIcon updates the menu bar button icon based on status
-// Currently unused due to threading issues - will be re-enabled when proper main-thread dispatch is implemented
-//
-//nolint:unused // Kept for when threading fix is implemented (see docs/troubleshooting/THREADING_FIX.md)
+// Called from ApplyPendingUpdate which runs on the main thread
 func (app *StatusBarApp) updateMenuBarIcon() {
 	if app.currentStatus == nil {
 		return
