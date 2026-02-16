@@ -200,6 +200,9 @@ func (app *StatusBarApp) performUpdateOnMainThread(status *ipc.StatusSnapshot) {
 }
 
 // updateMenuBarIcon updates the menu bar button icon based on status
+// Currently unused due to threading issues - will be re-enabled when proper main-thread dispatch is implemented
+//
+//nolint:unused // Kept for when threading fix is implemented (see docs/troubleshooting/THREADING_FIX.md)
 func (app *StatusBarApp) updateMenuBarIcon() {
 	if app.currentStatus == nil {
 		return
