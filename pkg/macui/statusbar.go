@@ -111,10 +111,7 @@ func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
 		return
 	}
 
-	// Store status for main thread to access
-	app.currentStatus = status
-
-	// Perform the update on the main thread
+	// Queue the update - currentStatus will be set when ApplyPendingUpdate() runs on main thread
 	app.performUpdateOnMainThread(status)
 }
 
