@@ -116,12 +116,15 @@ func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
 }
 
 // performUpdateOnMainThread handles the actual UI update logic
+// WARNING: This function modifies AppKit GUI elements and MUST be called from the main thread only.
+// Currently called from background fsnotify goroutine which causes SIGILL/SIGTRAP crashes!
 func (app *StatusBarApp) performUpdateOnMainThread(status *ipc.StatusSnapshot) {
 	if app.currentStatus == nil {
 		// First update - show initial notification
 		app.currentStatus = status
-		app.updateMenuBarIcon()
-		app.rebuildMenu()
+		// DISABLED: GUI updates from background thread cause crashes
+		// app.updateMenuBarIcon()
+		// app.rebuildMenu()
 		if err := SendNotification("Memofy", "Monitoring Active", "Automatic meeting detector started"); err != nil {
 			log.Printf("Warning: failed to send notification: %v", err)
 		}
@@ -134,8 +137,8 @@ func (app *StatusBarApp) performUpdateOnMainThread(status *ipc.StatusSnapshot) {
 
 	app.currentStatus = status
 
-	// Update menu bar icon (this is safe)
-	app.updateMenuBarIcon()
+	// DISABLED: GUI operations from background thread cause crashes on macOS
+	// app.updateMenuBarIcon()
 
 	// Detect recording state change (T085: Display recording duration)
 	// Check actual recording state from OBS, not just connection status
@@ -148,14 +151,10 @@ func (app *StatusBarApp) performUpdateOnMainThread(status *ipc.StatusSnapshot) {
 		}
 	}
 
-	// Only rebuild menu if recording state or mode changed
-	// This avoids unnecessary menu rebuilds which can cause threading issues
+	// Log status changes (GUI updates disabled due to threading issues)
 	if isRecording != oldRecording || status.Mode != oldMode {
-		log.Printf("Menu rebuild needed: recording=%v->%v mode=%s->%s", oldRecording, isRecording, oldMode, status.Mode)
-		// NOTE: rebuildMenu() should only be called from main thread
-		// For now, we skip it from background threads to avoid crashes
-		// TODO: Use proper dispatch_async to main queue
-		// app.rebuildMenu()
+		log.Printf("Status changed: recording=%v->%v mode=%s->%s",
+			oldRecording, isRecording, oldMode, status.Mode)
 	}
 
 	if isRecording && !app.previousRecording {
