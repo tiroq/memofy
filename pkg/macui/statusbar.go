@@ -19,16 +19,16 @@ import (
 // StatusBarApp represents the menu bar application
 // Implements status monitoring, menu display, and command interface
 type StatusBarApp struct {
-	statusItem          appkit.StatusItem
-	menu                appkit.Menu
-	currentStatus       *ipc.StatusSnapshot
-	lastErrorShown      string
-	lastErrorTime       time.Time
-	settingsWindow      *SettingsWindow
-	previousRecording   bool
-	recordingStartTime  time.Time
-	updateChecker       *autoupdate.UpdateChecker
-	lastUpdateCheckTime time.Time
+	statusItem         appkit.StatusItem
+	menu               appkit.Menu
+	currentStatus      *ipc.StatusSnapshot
+	lastErrorShown     string
+	lastErrorTime      time.Time
+	settingsWindow     *SettingsWindow
+	aboutWindow        *AboutWindow
+	previousRecording  bool
+	recordingStartTime time.Time
+	updateChecker      *autoupdate.UpdateChecker
 }
 
 // GetCurrentStatus returns the current status snapshot (for testing)
@@ -67,6 +67,9 @@ func NewStatusBarApp(version string) *StatusBarApp {
 		settingsWindow: NewSettingsWindow(),
 		updateChecker:  checker,
 	}
+
+	// Create About window
+	app.aboutWindow = NewAboutWindow(version, checker)
 
 	// Create status bar item
 	app.createStatusBar()
@@ -265,10 +268,10 @@ func (app *StatusBarApp) rebuildMenu() {
 	action.Set(logsItem, app.OpenLogs)
 	app.menu.AddItem(logsItem)
 
-	checkUpdateItem := appkit.NewMenuItem()
-	checkUpdateItem.SetTitle("🔄 Check for Updates")
-	action.Set(checkUpdateItem, app.checkForUpdates)
-	app.menu.AddItem(checkUpdateItem)
+	aboutItem := appkit.NewMenuItem()
+	aboutItem.SetTitle("ℹ️ About Memofy")
+	action.Set(aboutItem, app.ShowAbout)
+	app.menu.AddItem(aboutItem)
 
 	// Quit
 	app.menu.AddItem(appkit.MenuItem_SeparatorItem())
@@ -282,24 +285,12 @@ func (app *StatusBarApp) rebuildMenu() {
 	app.menu.AddItem(quitItem)
 }
 
-// checkForUpdates wrapper that takes sender parameter (for action.Set)
-func (app *StatusBarApp) checkForUpdates(sender objc.Object) {
-	available, version, err := app.CheckForUpdates()
-	if err != nil {
-		if notifErr := SendErrorNotification("Update Check Failed", err.Error()); notifErr != nil {
-			log.Printf("Failed to send error notification: %v", notifErr)
-		}
-		return
-	}
-	if available {
-		msg := fmt.Sprintf("Version %s is available. Would you like to update?", version)
-		if notifErr := SendNotification("Memofy", "Update Available", msg); notifErr != nil {
-			log.Printf("Failed to send notification: %v", notifErr)
-		}
-		app.UpdateNow()
-	} else {
-		if notifErr := SendNotification("Memofy", "Up to Date", "You have the latest version"); notifErr != nil {
-			log.Printf("Failed to send notification: %v", notifErr)
+// ShowAbout displays the About dialog
+func (app *StatusBarApp) ShowAbout(sender objc.Object) {
+	if err := app.aboutWindow.Show(); err != nil {
+		log.Printf("Failed to show About dialog: %v", err)
+		if notifErr := SendNotification("Memofy", "Error", "Could not open About window"); notifErr != nil {
+			log.Printf("Warning: failed to send notification: %v", notifErr)
 		}
 	}
 }
@@ -454,64 +445,6 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%.1fm", d.Minutes())
 	}
 	return fmt.Sprintf("%.0fs", d.Seconds())
-}
-
-// CheckForUpdates checks if a new version is available
-// Only checks once per hour
-func (app *StatusBarApp) CheckForUpdates() (bool, string, error) {
-	// Throttle updates to once per hour
-	if time.Since(app.lastUpdateCheckTime) < time.Hour {
-		return false, "", nil
-	}
-
-	app.lastUpdateCheckTime = time.Now()
-
-	available, release, err := app.updateChecker.IsUpdateAvailable()
-	if err != nil {
-		log.Printf("Update check failed: %v", err)
-		return false, "", err
-	}
-
-	if available && release != nil {
-		return true, release.TagName, nil
-	}
-
-	return false, "", nil
-}
-
-// UpdateNow downloads and installs the latest version
-func (app *StatusBarApp) UpdateNow() {
-	if err := SendNotification("Memofy", "Updating...", "Downloading latest version"); err != nil {
-		log.Printf("Warning: failed to send notification: %v", err)
-	}
-	log.Println("Starting update...")
-
-	go func() {
-		release, err := app.updateChecker.GetLatestRelease()
-		if err != nil {
-			log.Printf("Failed to get latest release: %v", err)
-			if notifErr := SendErrorNotification("Update Failed", fmt.Sprintf("Could not fetch update: %v", err)); notifErr != nil {
-				log.Printf("Warning: failed to send error notification: %v", notifErr)
-			}
-			return
-		}
-
-		if err := app.updateChecker.DownloadAndInstall(release); err != nil {
-			log.Printf("Update failed: %v", err)
-			if notifErr := SendErrorNotification("Update Failed", fmt.Sprintf("Could not install update: %v", err)); notifErr != nil {
-				log.Printf("Warning: failed to send error notification: %v", notifErr)
-			}
-			return
-		}
-
-		if err := SendNotification("Memofy", "Update Complete", "Version "+release.TagName+" installed. Please restart the app."); err != nil {
-			log.Printf("Warning: failed to send notification: %v", err)
-		}
-		log.Println("Update completed successfully. Restart required.")
-
-		// Optionally restart the app
-		// exec.Command("open", "-a", "Memofy").Run()
-	}()
 }
 
 // Objective-C compatible menu action handlers
