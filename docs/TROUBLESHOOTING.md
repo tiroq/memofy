@@ -162,6 +162,49 @@ memofy-ctl start
 2. **Crash on Init** - Process panics during startup
 3. **OBS Connection Fails** - Can't reach OBS, immediate exit
 4. **Permission Issues** - Missing access to resources
+5. **Code Signing Issues** - macOS kills unsigned/corrupted binaries (see below)
+
+### Code Signing Issues (macOS-Specific)
+
+**Symptoms:**
+```bash
+$ memofy-core
+zsh: killed     memofy-core
+
+# Or in memofy-ctl:
+/Users/mysterx/.local/bin/memofy-ctl: line 117:  3162 Killed: 9
+```
+
+**Root Cause:**  
+macOS kernel rejects binaries with invalid/missing code signatures. Check system logs:
+
+```bash
+log show --predicate 'process == "kernel" AND eventMessage CONTAINS "CODE SIGNING"' --last 5m
+# Look for: "CODE SIGNING: cs_invalid_page... denying page sending SIGKILL"
+```
+
+**Solutions:**
+
+1. **Rebuild from source** (automatically signs):
+   ```bash
+   cd /path/to/memofy
+   make clean && make build
+   cp bin/memofy-core ~/.local/bin/
+   cp bin/memofy-ui ~/.local/bin/
+   ```
+
+2. **Sign existing binary**:
+   ```bash
+   codesign --force --sign - ~/.local/bin/memofy-core
+   codesign --force --sign - ~/.local/bin/memofy-ui
+   ```
+
+3. **Reinstall** (signs during installation):
+   ```bash
+   ./scripts/quick-install.sh --source
+   ```
+
+**For more details**, see [CODE_SIGNING.md](CODE_SIGNING.md).
 
 ### Solutions
 
