@@ -128,6 +128,7 @@ func (app *StatusBarApp) performUpdateOnMainThread(status *ipc.StatusSnapshot) {
 	// Queue the update to be processed by the main thread timer
 	app.pendingUpdate = true
 	app.pendingStatus = status
+	log.Printf("[DEBUG] UI update queued: mode=%s, meeting=%v", status.Mode, status.DetectionState.MeetingDetected)
 }
 
 // HasPendingUpdate returns true if there's a UI update waiting to be applied
@@ -141,6 +142,7 @@ func (app *StatusBarApp) ApplyPendingUpdate() {
 		return
 	}
 
+	log.Printf("[DEBUG] Applying queued UI update on main thread")
 	status := app.pendingStatus
 	app.pendingUpdate = false
 
