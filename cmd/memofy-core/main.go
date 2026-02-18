@@ -545,6 +545,14 @@ func handleCommand(cmd ipc.Command, sm *statemachine.StateMachine, obs *obsws.Cl
 			errLog.Printf("Failed to write status after mode change: %v", err)
 		}
 
+	case ipc.CmdManual:
+		sm.SetMode(ipc.ModeManual)
+		outLog.Println("Mode changed to MANUAL (detection active, OBS control disabled)")
+		// Immediately update status so UI reflects the change
+		if err := updateStatusMode(sm, obs); err != nil {
+			errLog.Printf("Failed to write status after mode change: %v", err)
+		}
+
 	case ipc.CmdToggle:
 		// Toggle recording state: if recording, stop; else start
 		if sm.IsRecording() {
