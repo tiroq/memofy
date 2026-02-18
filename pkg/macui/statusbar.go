@@ -409,6 +409,7 @@ func (app *StatusBarApp) StopRecording(sender objc.Object) {
 // SetAutoMode sends auto mode command (T077)
 func (app *StatusBarApp) SetAutoMode(sender objc.Object) {
 	app.sendCommand(ipc.CmdAuto)
+	app.applyModeColor(ipc.ModeAuto)
 	if err := SendNotification("Memofy", "Mode Changed", "Auto: detection active, OBS controlled automatically"); err != nil {
 		log.Printf("Warning: failed to send notification: %v", err)
 	}
@@ -417,6 +418,7 @@ func (app *StatusBarApp) SetAutoMode(sender objc.Object) {
 // SetManualMode sends manual mode command
 func (app *StatusBarApp) SetManualMode(sender objc.Object) {
 	app.sendCommand(ipc.CmdManual)
+	app.applyModeColor(ipc.ModeManual)
 	if err := SendNotification("Memofy", "Mode Changed", "Manual: detection active, you control OBS recording"); err != nil {
 		log.Printf("Warning: failed to send notification: %v", err)
 	}
@@ -425,9 +427,20 @@ func (app *StatusBarApp) SetManualMode(sender objc.Object) {
 // SetPauseMode sends pause command (T077)
 func (app *StatusBarApp) SetPauseMode(sender objc.Object) {
 	app.sendCommand(ipc.CmdPause)
+	app.applyModeColor(ipc.ModePaused)
 	if err := SendNotification("Memofy", "Mode Changed", "Paused: all detection suspended"); err != nil {
 		log.Printf("Warning: failed to send notification: %v", err)
 	}
+}
+
+// applyModeColor immediately updates the menu bar icon color for the given mode.
+// Called right after the user picks a mode from the menu so the change is
+// reflected instantly without waiting for the next status poll cycle.
+func (app *StatusBarApp) applyModeColor(mode ipc.OperatingMode) {
+	if app.currentStatus != nil {
+		app.currentStatus.Mode = mode
+	}
+	app.updateMenuBarIcon()
 }
 
 // OpenRecordingsFolder opens the OBS recordings directory in Finder (T078)
