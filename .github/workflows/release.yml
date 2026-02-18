@@ -29,9 +29,10 @@ jobs:
           - goos: darwin
             goarch: arm64
             artifact_name: memofy-macos-arm64
-          - goos: darwin
-            goarch: amd64
-            artifact_name: memofy-macos-amd64
+          # Uncomment to re-enable Intel macOS builds:
+          # - goos: darwin
+          #   goarch: amd64
+          #   artifact_name: memofy-macos-amd64
 
     steps:
       - name: Checkout code
