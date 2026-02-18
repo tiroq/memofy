@@ -171,10 +171,10 @@ show_status() {
     echo ""
     echo "=== Memofy Process Status ==="
     echo ""
-    
+
     for process in memofy-core memofy-ui; do
         local pid_file="$CACHE_DIR/${process}.pid"
-        
+
         if [ -f "$pid_file" ]; then
             local pid=$(cat "$pid_file")
             if ps -p "$pid" > /dev/null 2>&1; then
@@ -190,7 +190,63 @@ show_status() {
             fi
         fi
     done
-    
+
+    echo ""
+
+    # Show launchd service state
+    echo "=== launchd Services ==="
+    echo ""
+    for label in com.memofy.core com.memofy.ui; do
+        local svc_status
+        svc_status=$(launchctl list 2>/dev/null | grep "$label" || true)
+        if [ -n "$svc_status" ]; then
+            local pid_col
+            pid_col=$(echo "$svc_status" | awk '{print $1}')
+            local exit_col
+            exit_col=$(echo "$svc_status" | awk '{print $2}')
+            if [ "$pid_col" != "-" ]; then
+                echo -e "${GREEN}✓${NC} $label loaded (PID $pid_col)"
+            else
+                echo -e "${YELLOW}!${NC} $label loaded but not running (last exit: $exit_col)"
+            fi
+        else
+            local plist="$HOME/Library/LaunchAgents/${label}.plist"
+            if [ -f "$plist" ]; then
+                echo -e "${YELLOW}!${NC} $label plist installed but not loaded"
+            else
+                echo -e "${RED}✗${NC} $label not installed as a service"
+            fi
+        fi
+    done
+
+    echo ""
+
+    # Show current operating mode
+    echo "=== Operating Mode ==="
+    echo ""
+    local status_file="$CACHE_DIR/status.json"
+    if [ -f "$status_file" ]; then
+        local mode
+        mode=$(python3 -c "import json,sys; d=json.load(open('$status_file')); print(d.get('mode','unknown'))" 2>/dev/null || \
+               grep -o '"mode":"[^"]*"' "$status_file" | cut -d'"' -f4)
+        case "$mode" in
+            auto)   echo -e "  Mode: ${GREEN}auto${NC}   (detection active, OBS controlled automatically)" ;;
+            manual) echo -e "  Mode: ${YELLOW}manual${NC} (detection active, YOU control OBS recording)" ;;
+            paused) echo -e "  Mode: ${RED}paused${NC} (all detection suspended)" ;;
+            *)      echo -e "  Mode: ${YELLOW}$mode${NC}" ;;
+        esac
+        local obs_connected
+        obs_connected=$(python3 -c "import json,sys; d=json.load(open('$status_file')); print(d.get('obs_connected',False))" 2>/dev/null || \
+                        grep -o '"obs_connected":[^,}]*' "$status_file" | cut -d':' -f2 | tr -d ' ')
+        if [ "$obs_connected" = "True" ] || [ "$obs_connected" = "true" ]; then
+            echo -e "  OBS: ${GREEN}connected${NC}"
+        else
+            echo -e "  OBS: ${RED}disconnected${NC}"
+        fi
+    else
+        echo "  Status file not found (is memofy-core running?)"
+    fi
+
     echo ""
 }
 
@@ -199,6 +255,132 @@ clean_pids() {
     print_info "Cleaning all PID files..."
     rm -f "$CACHE_DIR"/*.pid 2>/dev/null || true
     print_info "✓ PID files cleaned"
+}
+
+# Set operating mode by writing command to IPC file
+set_mode() {
+    local mode=$1
+    local status_file="$CACHE_DIR/status.json"
+
+    if [ -z "$mode" ]; then
+        # Show current mode
+        if [ -f "$status_file" ]; then
+            local current
+            current=$(python3 -c "import json; d=json.load(open('$status_file')); print(d.get('mode','unknown'))" 2>/dev/null || \
+                      grep -o '"mode":"[^"]*"' "$status_file" | cut -d'"' -f4)
+            echo "Current mode: $current"
+        else
+            print_warn "Status file not found. Is memofy-core running?"
+        fi
+        echo ""
+        echo "Available modes:  auto | manual | paused"
+        echo "Usage: memofy-ctl mode <auto|manual|paused>"
+        return 0
+    fi
+
+    case "$mode" in
+        auto|manual|paused)
+            mkdir -p "$CACHE_DIR"
+            echo -n "$mode" > "$CACHE_DIR/cmd.txt"
+            print_info "Command '$mode' sent to memofy-core"
+            # Brief wait then confirm
+            sleep 0.5
+            if [ -f "$status_file" ]; then
+                local new_mode
+                new_mode=$(python3 -c "import json; d=json.load(open('$status_file')); print(d.get('mode','unknown'))" 2>/dev/null || \
+                           grep -o '"mode":"[^"]*"' "$status_file" | cut -d'"' -f4)
+                print_info "Mode is now: $new_mode"
+            fi
+            ;;
+        *)
+            print_error "Unknown mode: $mode"
+            echo "Available modes: auto | manual | paused"
+            exit 1
+            ;;
+    esac
+}
+
+# Install launchd services for both components
+install_services() {
+    local component=${1:-all}
+    local launchagents_dir="$HOME/Library/LaunchAgents"
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    mkdir -p "$launchagents_dir"
+
+    install_plist() {
+        local label=$1
+        local plist_src="$script_dir/${label}.plist"
+        local plist_dst="$launchagents_dir/${label}.plist"
+
+        if [ ! -f "$plist_src" ]; then
+            print_error "Plist template not found: $plist_src"
+            return 1
+        fi
+
+        # Substitute INSTALL_DIR placeholder
+        sed "s|INSTALL_DIR|$INSTALL_DIR|g" "$plist_src" > "$plist_dst"
+        print_info "Installed $plist_dst"
+
+        # Unload first if already loaded (ignore error if not loaded)
+        launchctl unload "$plist_dst" 2>/dev/null || true
+        launchctl load "$plist_dst"
+        print_info "✓ $label service loaded"
+    }
+
+    case "$component" in
+        core) install_plist "com.memofy.core" ;;
+        ui)   install_plist "com.memofy.ui"   ;;
+        all)
+            install_plist "com.memofy.core"
+            install_plist "com.memofy.ui"
+            ;;
+        *)
+            print_error "Unknown component: $component"
+            echo "Usage: memofy-ctl install [core|ui]"
+            exit 1
+            ;;
+    esac
+
+    print_info ""
+    print_info "Services will auto-start on login and restart if they crash."
+    print_info "Use 'memofy-ctl status' to verify."
+}
+
+# Uninstall launchd services
+uninstall_services() {
+    local component=${1:-all}
+    local launchagents_dir="$HOME/Library/LaunchAgents"
+
+    unload_plist() {
+        local label=$1
+        local plist_dst="$launchagents_dir/${label}.plist"
+
+        if [ -f "$plist_dst" ]; then
+            launchctl unload "$plist_dst" 2>/dev/null || true
+            rm -f "$plist_dst"
+            print_info "✓ $label service removed"
+        else
+            print_warn "$label is not installed as a service"
+        fi
+    }
+
+    case "$component" in
+        core) unload_plist "com.memofy.core" ;;
+        ui)   unload_plist "com.memofy.ui"   ;;
+        all)
+            stop_process "memofy-ui"
+            stop_process "memofy-core"
+            unload_plist "com.memofy.ui"
+            unload_plist "com.memofy.core"
+            ;;
+        *)
+            print_error "Unknown component: $component"
+            echo "Usage: memofy-ctl uninstall [core|ui]"
+            exit 1
+            ;;
+    esac
 }
 
 # Run comprehensive diagnostics
@@ -351,31 +533,63 @@ case "$COMMAND" in
         stop_process "memofy-core"
         clean_pids
         ;;
+    mode)
+        set_mode "$2"
+        ;;
+    install)
+        install_services "${2:-all}"
+        ;;
+    uninstall)
+        uninstall_services "${2:-all}"
+        ;;
+    enable)
+        if [ -z "$2" ]; then
+            print_error "Usage: memofy-ctl enable <core|ui>"
+            exit 1
+        fi
+        install_services "$2"
+        ;;
+    disable)
+        if [ -z "$2" ]; then
+            print_error "Usage: memofy-ctl disable <core|ui>"
+            exit 1
+        fi
+        uninstall_services "$2"
+        ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status|logs|diagnose|clean} [core|ui]"
+        echo "Usage: $0 {start|stop|restart|status|mode|install|uninstall|enable|disable|logs|diagnose|clean} [core|ui]"
         echo ""
-        echo "Commands:"
-        echo "  start [core|ui]   - Start memofy processes"
-        echo "  stop [core|ui]    - Stop memofy processes gracefully"
-        echo "  restart [core|ui] - Restart memofy processes"
-        echo "  status            - Show process status"
-        echo "  logs              - Show process logs (last 20 lines)"
-        echo "  diagnose          - Run comprehensive diagnostics"
-        echo "  clean             - Stop all processes and clean PID files"
+        echo "Process Management:"
+        echo "  start [core|ui]         - Start memofy processes"
+        echo "  stop [core|ui]          - Stop memofy processes gracefully"
+        echo "  restart [core|ui]       - Restart memofy processes"
+        echo ""
+        echo "Service Management (launchd auto-restart):"
+        echo "  install [core|ui]       - Install and enable launchd service(s)"
+        echo "  uninstall [core|ui]     - Disable and remove launchd service(s)"
+        echo "  enable <core|ui>        - Enable launchd service for component"
+        echo "  disable <core|ui>       - Disable launchd service for component"
+        echo ""
+        echo "Mode Control:"
+        echo "  mode                    - Show current operating mode"
+        echo "  mode auto               - Auto mode: detect + control OBS automatically"
+        echo "  mode manual             - Manual mode: detection active, YOU control OBS"
+        echo "  mode paused             - Paused: all detection suspended"
+        echo ""
+        echo "Diagnostics:"
+        echo "  status                  - Show process & service status + current mode"
+        echo "  logs                    - Show process logs (last 20 lines)"
+        echo "  diagnose                - Run comprehensive diagnostics"
+        echo "  clean                   - Stop all processes and clean PID files"
         echo ""
         echo "Examples:"
-        echo "  $0 status          # Show current status"
-        echo "  $0 logs            # Show recent logs"
-        echo "  $0 stop ui         # Stop only the UI"
-        echo "  $0 restart         # Restart both processes"
-        echo "  $0 clean           # Clean everything"
-        echo ""
-        echo "Troubleshooting:"
-        echo "  If core won't start:"
-        echo "    1. Check logs: $0 logs"
-        echo "    2. Ensure OBS is running"
-        echo "    3. Enable WebSocket: OBS > Tools > obs-websocket Settings"
-        echo "    4. Check port 4455 is available"
+        echo "  $0 install               # Install both services (auto-restart on crash)"
+        echo "  $0 mode manual           # Stop OBS being auto-controlled"
+        echo "  $0 mode auto             # Resume automatic meeting recording"
+        echo "  $0 status                # Full status including mode and launchd state"
+        echo "  $0 stop ui               # Stop only the UI"
+        echo "  $0 restart               # Restart both processes"
+        echo "  $0 clean                 # Clean everything"
         echo ""
         exit 1
         ;;
