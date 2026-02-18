@@ -24,7 +24,9 @@ func NewAboutWindow(version string, checker *autoupdate.UpdateChecker) *AboutWin
 	}
 }
 
-// Show displays the About dialog with app information and update checker
+// Show displays the About dialog with app information and update checker.
+// Must be called from a goroutine (NOT the main/UI thread) — it blocks while
+// the dialog is open.
 func (aw *AboutWindow) Show() error {
 	// Create About dialog with app information
 	aboutText := fmt.Sprintf(`Memofy - Automatic Meeting Recorder
@@ -44,36 +46,30 @@ Repository: github.com/tiroq/memofy`, aw.version)
 	aboutText = strings.ReplaceAll(aboutText, `"`, `\"`)
 	aboutText = strings.ReplaceAll(aboutText, "\n", "\\n")
 
-	script := fmt.Sprintf(`
-tell application "System Events"
+	script := fmt.Sprintf(`tell application "System Events"
 	activate
-	set response to display dialog "%s" buttons {"Check for Updates", "Close"} default button "Close" with title "About Memofy" with icon note
-	
-	if button returned of response is "Check for Updates" then
-		return "check_updates"
-	else
-		return "close"
-	end if
-end tell
-`, aboutText)
+	return button returned of (display alert "About Memofy" message "%s" buttons {"Check for Updates", "Close"} default button "Close" as informational)
+end tell`, aboutText)
 
 	cmd := exec.Command("osascript", "-e", script)
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
+	result := strings.TrimSpace(string(output))
+	log.Printf("[About] dialog result=%q err=%v", result, err)
 	if err != nil {
-		log.Printf("About dialog error (may be expected if cancelled): %v", err)
+		log.Printf("About dialog error: %v (output: %s)", err, output)
 		return nil
 	}
 
 	// Check if user clicked "Check for Updates"
-	result := strings.TrimSpace(string(output))
-	if result == "check_updates" {
+	if result == "Check for Updates" {
 		aw.checkForUpdates()
 	}
 
 	return nil
 }
 
-// checkForUpdates performs the update check
+// checkForUpdates performs the update check.
+// Must be called from a goroutine (NOT the main/UI thread).
 func (aw *AboutWindow) checkForUpdates() {
 	// Show checking notification
 	if err := SendNotification("Memofy", "Checking for Updates", "Please wait..."); err != nil {
@@ -91,33 +87,41 @@ func (aw *AboutWindow) checkForUpdates() {
 	}
 
 	if available && release != nil {
-		// Ask user if they want to update
-		msg := fmt.Sprintf("Version %s is available.\\n\\nCurrent version: %s\\n\\nWould you like to download and install it?", release.TagName, aw.version)
-		script := fmt.Sprintf(`
-tell application "System Events"
+		log.Printf("Update available: %s (current: %s)", release.TagName, aw.version)
+		// Use display alert — it does NOT raise error -128 on non-default button clicks,
+		// so osascript always exits 0 regardless of which button the user presses.
+		// This avoids the persistent "exit status 1" / Cancel-button gotcha with display dialog.
+		msg := fmt.Sprintf("Memofy %s is now available (you have %s).\\n\\nInstall and restart now?", release.TagName, aw.version)
+		script := fmt.Sprintf(`tell application "System Events"
 	activate
-	display dialog "%s" buttons {"Cancel", "Install Update"} default button "Install Update" with title "Update Available" with icon note
-	return button returned
-end tell
-`, msg)
+	return button returned of (display alert "Update Available" message "%s" buttons {"Not Now", "Install"} default button "Install" as informational)
+end tell`, msg)
 
 		cmd := exec.Command("osascript", "-e", script)
-		output, err := cmd.Output()
+		output, err := cmd.CombinedOutput()
+		result := strings.TrimSpace(string(output))
+		log.Printf("[Update] dialog result=%q err=%v", result, err)
 		if err != nil {
-			log.Printf("Update dialog cancelled or error: %v", err)
+			log.Printf("Update alert error (output: %s): %v", output, err)
 			return
 		}
-
-		result := strings.TrimSpace(string(output))
-		if result == "Install Update" {
+		if result == "Install" {
 			aw.installUpdate(release)
 		}
 	} else {
 		msg := fmt.Sprintf("You are running the latest version (%s).", aw.version)
+		log.Printf("No update: %s", msg)
 		if notifErr := SendNotification("Memofy", "Up to Date", msg); notifErr != nil {
 			log.Printf("Failed to send notification: %v", notifErr)
 		}
 	}
+}
+
+// RunUpdateCheck is the entry-point for a background-goroutine-triggered update
+// check (e.g. from a menu item). It is identical to checkForUpdates but is
+// exported so statusbar can call it without going through the About dialog.
+func (aw *AboutWindow) RunUpdateCheck() {
+	aw.checkForUpdates()
 }
 
 // installUpdate downloads and installs the update
