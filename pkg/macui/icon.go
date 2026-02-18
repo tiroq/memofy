@@ -16,7 +16,6 @@ var menubarIconPNG []byte
 const menubarIconSize = 18.0
 
 // loadMenubarIcon loads the embedded PNG and returns an NSImage sized for the menu bar.
-// The image is NOT marked as a template so we can apply explicit tint colors.
 func loadMenubarIcon() appkit.Image {
 	img := appkit.ImageClass.Alloc().InitWithData(menubarIconPNG)
 	img.SetSize(foundation.Size{Width: menubarIconSize, Height: menubarIconSize})
@@ -24,12 +23,40 @@ func loadMenubarIcon() appkit.Image {
 }
 
 // tintedMenubarIcon returns a copy of the base icon tinted with the given NSColor.
-// Uses -[NSImage imageWithTintColor:] (macOS 10.14+).
+//
+// Uses LockFocus/UnlockFocus + NSGraphicsContext compositing — compatible with
+// macOS 10.14+. Avoids -[NSImage imageWithTintColor:] which requires macOS 12+.
+//
+// Algorithm:
+//  1. Create a new blank image of the same size.
+//  2. lockFocus — redirects subsequent drawing into the new image.
+//  3. Draw the original image (CompositeCopy) to copy its pixels + alpha mask.
+//  4. Set compositing op to DestinationIn, then fill the entire rect with the
+//     tint color — this keeps only existing pixels, recolored with the tint.
+//  5. unlockFocus and return.
 func tintedMenubarIcon(color appkit.Color) appkit.Image {
+	size := foundation.Size{Width: menubarIconSize, Height: menubarIconSize}
 	base := loadMenubarIcon()
-	// Mark as template so imageWithTintColor works correctly
-	objc.Call[objc.Void](base, objc.Sel("setTemplate:"), true)
-	tinted := objc.Call[appkit.Image](base, objc.Sel("imageWithTintColor:"), color)
+
+	tinted := appkit.ImageClass.Alloc().InitWithSize(size)
+	objc.Call[objc.Void](tinted, objc.Sel("lockFocus"))
+
+	rect := foundation.Rect{
+		Origin: foundation.Point{X: 0, Y: 0},
+		Size:   size,
+	}
+
+	// Draw source image (copies pixels including alpha).
+	base.DrawInRectFromRectOperationFraction(rect, rect, appkit.CompositeCopy, 1.0)
+
+	// Switch the current context to DestinationIn compositing, then fill with
+	// the tint color — this recolors all opaque pixels to the chosen color.
+	ctx := appkit.GraphicsContext_CurrentContext()
+	ctx.SetCompositingOperation(appkit.CompositeDestinationIn)
+	color.SetFill()
+	appkit.BezierPath_FillRect(rect)
+
+	objc.Call[objc.Void](tinted, objc.Sel("unlockFocus"))
 	return tinted
 }
 
