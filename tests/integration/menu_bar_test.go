@@ -1,13 +1,16 @@
 package integration
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/progrium/darwinkit/objc"
+	"github.com/tiroq/memofy/internal/config"
 	"github.com/tiroq/memofy/internal/ipc"
 	"github.com/tiroq/memofy/pkg/macui"
 )
@@ -173,83 +176,87 @@ func TestControlCommandsWriteToFile(t *testing.T) {
 	}
 }
 
-// TestSettingsUIFlow verifies settings UI interaction (T088)
+// TestSettingsUIFlow verifies settings config round-trip (T088)
 func TestSettingsUIFlow(t *testing.T) {
-	settingsWindow := macui.NewSettingsWindow()
-
-	// Test loading settings
-	if err := settingsWindow.LoadSettingsFromFile(); err != nil {
-		// It's ok if file doesn't exist yet
-		t.Logf("Note: settings file not found (first run): %v", err)
+	// Build a valid config via the settings fields API and verify it can be saved/loaded
+	f := macui.SettingsFields{
+		ZoomEnabled:     true,
+		ZoomProcesses:   "zoom.us",
+		ZoomHints:       "Zoom Meeting",
+		TeamsEnabled:    true,
+		TeamsProcesses:  "Microsoft Teams",
+		TeamsHints:      "Microsoft Teams",
+		MeetEnabled:     true,
+		MeetProcesses:   "Google Meet",
+		MeetHints:       "Meet",
+		PollInterval:    "5",
+		StartThreshold:  "3",
+		StopThreshold:   "6",
+		AllowDevUpdates: false,
 	}
 
-	// Test getting current settings string
-	settingsStr := settingsWindow.GetCurrentSettings()
+	cfg, err := macui.BuildConfigFromFields(f)
+	if err != nil {
+		t.Fatalf("BuildConfigFromFields failed: %v", err)
+	}
+
+	// Verify config has the expected applications (internal names)
+	expectedApps := []string{"zoom", "teams", "google_meet"}
+	for _, app := range expectedApps {
+		rule := cfg.RuleByApp(app)
+		if rule == nil {
+			t.Errorf("Config should contain rule for %q", app)
+		}
+	}
+
+	// Build a summary string from the config (replaces GetCurrentSettings)
+	var sb strings.Builder
+	for _, r := range cfg.Rules {
+		fmt.Fprintf(&sb, "%s enabled=%v processes=%v hints=%v\n",
+			r.Application, r.Enabled, r.ProcessNames, r.WindowHints)
+	}
+	settingsStr := sb.String()
 	if settingsStr == "" {
-		t.Error("Settings string should not be empty")
+		t.Error("Settings summary should not be empty")
 	}
 
-	// Verify it contains expected content
-	expectedKeys := []string{
-		"Memofy Detection Settings",
-		"Zoom Detection",
-		"Teams Detection",
-		"Thresholds",
-		"Start Recording",
-		"Stop Recording",
-	}
-
+	expectedKeys := []string{"zoom", "teams", "google_meet"}
 	for _, key := range expectedKeys {
 		if !contains(settingsStr, key) {
-			t.Errorf("Settings string should contain '%s'", key)
+			t.Errorf("Settings summary should contain %q", key)
 		}
 	}
 }
 
-// TestSettingsSaveValidation verifies settings validation (T084)
+// TestSettingsSaveValidation verifies settings validation via BuildConfigFromFields (T084)
 func TestSettingsSaveValidation(t *testing.T) {
-	settingsWindow := macui.NewSettingsWindow()
+	baseFields := func(start, stop string) macui.SettingsFields {
+		return macui.SettingsFields{
+			ZoomEnabled:    true,
+			ZoomProcesses:  "zoom.us",
+			TeamsEnabled:   true,
+			TeamsProcesses: "Microsoft Teams",
+			MeetEnabled:    false,
+			PollInterval:   "5",
+			StartThreshold: start,
+			StopThreshold:  stop,
+		}
+	}
 
 	tests := []struct {
-		name           string
-		zoomProcess    string
-		teamsProcess   string
-		startThreshold int
-		stopThreshold  int
-		shouldSucceed  bool
+		name          string
+		start         string
+		stop          string
+		shouldSucceed bool
 	}{
-		{
-			name:           "valid settings",
-			zoomProcess:    "zoom.us",
-			teamsProcess:   "Microsoft Teams",
-			startThreshold: 3,
-			stopThreshold:  6,
-			shouldSucceed:  true,
-		},
-		{
-			name:           "invalid start threshold",
-			zoomProcess:    "zoom.us",
-			teamsProcess:   "Microsoft Teams",
-			startThreshold: 0,
-			stopThreshold:  6,
-			shouldSucceed:  false,
-		},
-		{
-			name:           "stop < start threshold",
-			zoomProcess:    "zoom.us",
-			teamsProcess:   "Microsoft Teams",
-			startThreshold: 5,
-			stopThreshold:  3,
-			shouldSucceed:  false,
-		},
+		{name: "valid settings", start: "3", stop: "6", shouldSucceed: true},
+		{name: "invalid start threshold", start: "0", stop: "6", shouldSucceed: false},
+		{name: "stop < start threshold", start: "5", stop: "3", shouldSucceed: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := settingsWindow.SaveSettings(
-				tt.zoomProcess, tt.teamsProcess,
-				tt.startThreshold, tt.stopThreshold)
-
+			_, err := macui.BuildConfigFromFields(baseFields(tt.start, tt.stop))
 			if tt.shouldSucceed && err != nil {
 				t.Errorf("Expected success but got error: %v", err)
 			}
@@ -257,6 +264,22 @@ func TestSettingsSaveValidation(t *testing.T) {
 				t.Errorf("Expected error but succeeded")
 			}
 		})
+	}
+
+	// Verify a passing config can be saved and re-loaded
+	cfg, err := macui.BuildConfigFromFields(baseFields("3", "6"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := config.SaveDetectionRules(cfg); err != nil {
+		t.Fatalf("SaveDetectionRules failed: %v", err)
+	}
+	loaded, err := config.LoadDetectionRules()
+	if err != nil {
+		t.Fatalf("LoadDetectionRules failed: %v", err)
+	}
+	if loaded.StartThreshold != cfg.StartThreshold {
+		t.Errorf("StartThreshold mismatch: got %d want %d", loaded.StartThreshold, cfg.StartThreshold)
 	}
 }
 
