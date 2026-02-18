@@ -33,6 +33,9 @@ type StatusBarApp struct {
 	// Timer-based UI update mechanism (safe for main-thread execution)
 	pendingUpdate bool
 	pendingStatus *ipc.StatusSnapshot
+	// pendingMode holds a mode the user just selected; kept until the core
+	// confirms it so status-poll updates don't immediately revert the icon.
+	pendingMode ipc.OperatingMode
 }
 
 // GetCurrentStatus returns the current status snapshot (for testing)
@@ -166,6 +169,18 @@ func (app *StatusBarApp) ApplyPendingUpdate() {
 
 	app.currentStatus = status
 
+	// If the core has confirmed a pending mode change, clear it.
+	// Until confirmed, keep using pendingMode so the icon/menu don't revert.
+	if app.pendingMode != "" {
+		if status.Mode == app.pendingMode {
+			log.Printf("🎨 Core confirmed mode: %s", app.pendingMode)
+			app.pendingMode = ""
+		} else {
+			// Core hasn't caught up yet — keep showing the pending mode
+			app.currentStatus.Mode = app.pendingMode
+		}
+	}
+
 	// Detect recording state from OBS payload
 	isRecording := false
 	if recordingState, ok := status.RecordingState.(map[string]interface{}); ok {
@@ -176,23 +191,25 @@ func (app *StatusBarApp) ApplyPendingUpdate() {
 		}
 	}
 
+	effectiveMode := app.currentStatus.Mode
+
 	// Update icon whenever anything that affects its color changes
-	iconChanged := status.Mode != oldMode ||
+	iconChanged := effectiveMode != oldMode ||
 		status.OBSConnected != oldOBS ||
 		isRecording != oldRecording ||
 		(status.LastError != "") != (oldError != "")
 
 	if iconChanged {
-		if status.Mode != oldMode {
-			log.Printf("🎨 Mode changed: %s → %s", oldMode, status.Mode)
+		if effectiveMode != oldMode {
+			log.Printf("🎨 Mode changed: %s → %s", oldMode, effectiveMode)
 		}
 		app.updateMenuBarIcon()
 	}
 
 	// Rebuild menu if mode or recording state changed
-	if isRecording != oldRecording || status.Mode != oldMode {
+	if isRecording != oldRecording || effectiveMode != oldMode {
 		log.Printf("Status changed: recording=%v->%v mode=%s->%s",
-			oldRecording, isRecording, oldMode, status.Mode)
+			oldRecording, isRecording, oldMode, effectiveMode)
 		app.rebuildMenu()
 	}
 
@@ -433,14 +450,16 @@ func (app *StatusBarApp) SetPauseMode(sender objc.Object) {
 	}
 }
 
-// applyModeColor immediately updates the menu bar icon color for the given mode.
-// Called right after the user picks a mode from the menu so the change is
-// reflected instantly without waiting for the next status poll cycle.
+// applyModeColor immediately reflects a user-selected mode in the icon and menu.
+// It stores the mode as pendingMode so poll updates won't revert it until the
+// core process confirms the change.
 func (app *StatusBarApp) applyModeColor(mode ipc.OperatingMode) {
+	app.pendingMode = mode
 	if app.currentStatus != nil {
 		app.currentStatus.Mode = mode
 	}
 	app.updateMenuBarIcon()
+	app.rebuildMenu()
 }
 
 // OpenRecordingsFolder opens the OBS recordings directory in Finder (T078)
