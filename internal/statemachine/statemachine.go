@@ -32,8 +32,20 @@ func NewStateMachine(cfg *config.DetectionConfig) *StateMachine {
 // ProcessDetection evaluates detection state and returns action to take
 // Returns: shouldStartRecording, shouldStopRecording, newApp
 func (sm *StateMachine) ProcessDetection(state detector.DetectionState) (bool, bool, detector.DetectedApp) {
-	// Manual modes bypass auto-detection
+	// Paused mode: bypass detection entirely
 	if sm.currentMode == ipc.ModePaused {
+		return false, false, detector.AppNone
+	}
+
+	// Manual mode: update streaks for UI display but never auto-control OBS
+	if sm.currentMode == ipc.ModeManual {
+		if state.MeetingDetected {
+			sm.absenceStreak = 0
+			sm.detectionStreak++
+		} else {
+			sm.detectionStreak = 0
+			sm.absenceStreak++
+		}
 		return false, false, detector.AppNone
 	}
 
@@ -89,7 +101,10 @@ func (sm *StateMachine) ForceStart(app detector.DetectedApp) error {
 		return fmt.Errorf("already recording")
 	}
 	sm.StartRecording(app)
-	sm.currentMode = ipc.ModePaused // Switch to paused to prevent auto-stop
+	// In manual mode keep manual mode, otherwise switch to paused to prevent auto-stop
+	if sm.currentMode != ipc.ModeManual {
+		sm.currentMode = ipc.ModePaused
+	}
 	return nil
 }
 
