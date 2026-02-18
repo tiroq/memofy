@@ -158,17 +158,15 @@ func (app *StatusBarApp) ApplyPendingUpdate() {
 		return
 	}
 
-	// Check if mode changed - only rebuild menu if structure needs to change
+	// Snapshot previous state for change detection
 	oldMode := app.currentStatus.Mode
+	oldOBS := app.currentStatus.OBSConnected
+	oldError := app.currentStatus.LastError
 	oldRecording := app.previousRecording
 
 	app.currentStatus = status
 
-	// Update menu bar icon (safe - called from main thread)
-	app.updateMenuBarIcon()
-
-	// Detect recording state change (T085: Display recording duration)
-	// Check actual recording state from OBS, not just connection status
+	// Detect recording state from OBS payload
 	isRecording := false
 	if recordingState, ok := status.RecordingState.(map[string]interface{}); ok {
 		if recording, exists := recordingState["recording"]; exists {
@@ -178,7 +176,20 @@ func (app *StatusBarApp) ApplyPendingUpdate() {
 		}
 	}
 
-	// Rebuild menu if recording state or mode changed
+	// Update icon whenever anything that affects its color changes
+	iconChanged := status.Mode != oldMode ||
+		status.OBSConnected != oldOBS ||
+		isRecording != oldRecording ||
+		(status.LastError != "") != (oldError != "")
+
+	if iconChanged {
+		if status.Mode != oldMode {
+			log.Printf("🎨 Mode changed: %s → %s", oldMode, status.Mode)
+		}
+		app.updateMenuBarIcon()
+	}
+
+	// Rebuild menu if mode or recording state changed
 	if isRecording != oldRecording || status.Mode != oldMode {
 		log.Printf("Status changed: recording=%v->%v mode=%s->%s",
 			oldRecording, isRecording, oldMode, status.Mode)
