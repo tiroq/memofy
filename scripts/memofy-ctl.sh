@@ -156,14 +156,31 @@ start_process() {
     fi
 }
 
-# Restart a process
+# Restart a process - prefer launchctl kickstart when service is managed by launchd
 restart_process() {
     local process_name=$1
     local binary_path=$2
-    
-    stop_process "$process_name"
-    sleep 1
-    start_process "$process_name" "$binary_path"
+
+    # Derive launchd label from process name (memofy-core -> com.memofy.core)
+    local label="com.${process_name//-/.}"
+    local plist="$HOME/Library/LaunchAgents/${label}.plist"
+
+    if [ -f "$plist" ] && launchctl list 2>/dev/null | grep -q "$label"; then
+        print_info "Restarting $process_name via launchctl..."
+        # kickstart -k kills the running instance and immediately starts a fresh one
+        launchctl kickstart -k "gui/$(id -u)/${label}"
+        sleep 1
+        if pgrep -q "$process_name"; then
+            print_info "✓ $process_name restarted (new PID: $(pgrep "$process_name" | head -1))"
+        else
+            print_warn "$process_name not yet running – launchd may still be starting it"
+        fi
+    else
+        # Not managed by launchd – fall back to manual stop/start
+        stop_process "$process_name"
+        sleep 1
+        start_process "$process_name" "$binary_path"
+    fi
 }
 
 # Show status
