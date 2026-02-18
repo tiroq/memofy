@@ -429,18 +429,23 @@ start_ui() {
     # Also ensure core is running
     launchctl start com.memofy.core 2>/dev/null || true
 
-    sleep 2
-
-    if pgrep -q memofy-ui; then
-        print_success "Memofy is running in menu bar (look for the icon ⚫ at the top of your screen)"
-    else
-        print_error "Menu bar UI failed to start"
-        if [ -f /tmp/memofy-ui.err.log ]; then
-            tail -10 /tmp/memofy-ui.err.log | grep -i "error\|fatal\|panic" || print_warn "No obvious errors in logs"
+    # Poll for up to 15s to account for launchd ThrottleInterval (5s for UI)
+    local waited=0
+    while [ $waited -lt 15 ]; do
+        if pgrep -q memofy-ui; then
+            print_success "Memofy is running in menu bar (look for the icon ⚫ at the top of your screen)"
+            return 0
         fi
-        print_info "Try running manually to see errors: ~/.local/bin/memofy-ui"
-        return 1
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    print_error "Menu bar UI failed to start after ${waited}s"
+    if [ -f /tmp/memofy-ui.err.log ]; then
+        tail -10 /tmp/memofy-ui.err.log | grep -i "error\|fatal\|panic" || print_warn "No obvious errors in logs"
     fi
+    print_info "Try running manually to see errors: ~/.local/bin/memofy-ui"
+    return 1
 }
 
 # Parse arguments
