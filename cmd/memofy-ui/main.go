@@ -133,7 +133,6 @@ func main() {
 	app.Run()
 }
 
-
 // updateStatus reads status.json and updates UI
 func updateStatus() error {
 	status, err := ipc.ReadStatus()
