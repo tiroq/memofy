@@ -224,11 +224,15 @@ func (sw *SettingsWindow) buildUpdatesTab() appkit.IView {
 }
 
 // makeScrollStack creates a vertical-scroll container (NSScrollView + NSStackView).
+// The scroll view uses frame-based sizing (no TAMSIC) so NSTabView can resize it
+// to fill the tab's content area automatically.
 func makeScrollStack() (appkit.ScrollView, appkit.StackView) {
 	scroll := appkit.NewScrollView()
 	scroll.SetHasVerticalScroller(true)
 	scroll.SetDrawsBackground(false)
-	scroll.SetTranslatesAutoresizingMaskIntoConstraints(false)
+	// Do NOT call SetTranslatesAutoresizingMaskIntoConstraints(false) here –
+	// NSTabView uses setFrame: to size the tab content view, which requires the
+	// default autoresizing-mask behaviour to be active on the scroll view.
 
 	root := appkit.NewVerticalStackView()
 	root.SetTranslatesAutoresizingMaskIntoConstraints(false)
