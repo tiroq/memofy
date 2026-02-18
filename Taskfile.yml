@@ -8,6 +8,10 @@ vars:
     sh: git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev"
   REPO_OWNER: tiroq
   REPO_NAME: memofy
+  # Prefer native arm64 Go toolchain (avoids Rosetta + darwinkit libffi crashes on macOS 26+)
+  # Falls back to system Go if arm64 toolchain is not available.
+  GO_CMD:
+    sh: command -v /usr/local/go-arm64/bin/go >/dev/null 2>&1 && echo "/usr/local/go-arm64/bin/go" || echo "go"
 
 tasks:
   default:
@@ -31,7 +35,7 @@ tasks:
       - build/{{.BINARY_CORE}}
     cmds:
       - mkdir -p build
-      - go build -ldflags "-X main.Version={{.VERSION}}" -o build/{{.BINARY_CORE}} ./cmd/memofy-core
+      - '{{.GO_CMD}} build -ldflags "-X main.Version={{.VERSION}}" -o build/{{.BINARY_CORE}} ./cmd/memofy-core'
 
   build-ui:
     desc: Build the menu bar UI binary
@@ -43,7 +47,7 @@ tasks:
       - build/{{.BINARY_UI}}
     cmds:
       - mkdir -p build
-      - go build -ldflags "-X main.Version={{.VERSION}}" -o build/{{.BINARY_UI}} ./cmd/memofy-ui
+      - '{{.GO_CMD}} build -ldflags "-X main.Version={{.VERSION}}" -o build/{{.BINARY_UI}} ./cmd/memofy-ui'
 
   install:
     desc: Install binaries and LaunchAgent
@@ -71,18 +75,18 @@ tasks:
   test:
     desc: Run all tests
     cmds:
-      - go test -timeout 30s -v ./...
+      - '{{.GO_CMD}} test -timeout 30s -v ./...'
 
   test-integration:
     desc: Run integration tests
     cmds:
-      - go test -timeout 30s -v ./tests/integration/...
+      - '{{.GO_CMD}} test -timeout 30s -v ./tests/integration/...'
 
   test-coverage:
     desc: Run tests with coverage report
     cmds:
-      - go test -coverprofile=coverage.out ./...
-      - go tool cover -html=coverage.out -o coverage.html
+      - '{{.GO_CMD}} test -coverprofile=coverage.out ./...'
+      - '{{.GO_CMD}} tool cover -html=coverage.out -o coverage.html'
       - 'echo "Coverage report: coverage.html"'
 
   lint:
@@ -117,7 +121,7 @@ tasks:
   fmt:
     desc: Format code
     cmds:
-      - go fmt ./...
+      - '{{.GO_CMD}} fmt ./...'
 
   clean:
     desc: Clean build artifacts
