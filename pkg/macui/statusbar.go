@@ -90,9 +90,10 @@ func (app *StatusBarApp) createStatusBar() {
 	statusBar := appkit.StatusBar_SystemStatusBar()
 	app.statusItem = statusBar.StatusItemWithLength(appkit.VariableStatusItemLength)
 
-	// Set initial button state
+	// Set initial button state with logo icon (gray = idle)
 	button := app.statusItem.Button()
-	button.SetTitle("⚫") // Initial idle state
+	button.SetTitle("") // clear text; image is used instead
+	button.SetImage(tintedMenubarIcon(appkit.Color_SystemGrayColor()))
 
 	// Create menu
 	app.menu = appkit.NewMenu()
@@ -226,16 +227,15 @@ func (app *StatusBarApp) ApplyPendingUpdate() {
 		status.LastError)
 }
 
-// updateMenuBarIcon updates the menu bar button icon based on status
-// Called from ApplyPendingUpdate which runs on the main thread
+// updateMenuBarIcon updates the menu bar button icon based on status.
+// Called from ApplyPendingUpdate which runs on the main thread.
 func (app *StatusBarApp) updateMenuBarIcon() {
 	if app.currentStatus == nil {
 		return
 	}
 
 	button := app.statusItem.Button()
-	icon := getStatusIcon(app.currentStatus)
-	button.SetTitle(icon)
+	button.SetImage(iconForStatus(app.currentStatus))
 }
 
 // StartUpdateTimer schedules a repeating NSTimer on the main run loop that flushes
