@@ -3,6 +3,7 @@ package macui
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -137,12 +138,12 @@ func (aw *AboutWindow) installUpdate(release *autoupdate.Release) {
 			return
 		}
 
-		// Show success message
-		msg := fmt.Sprintf("Successfully installed version %s!\\n\\nPlease restart Memofy to use the new version.", release.TagName)
+		// Show success message and restart
+		msg := fmt.Sprintf("Successfully installed version %s!\\n\\nMemofy will now restart to apply the update.", release.TagName)
 		script := fmt.Sprintf(`
 tell application "System Events"
 	activate
-	display dialog "%s" buttons {"OK"} default button "OK" with title "Update Complete" with icon note
+	display dialog "%s" buttons {"Restart Now"} default button "Restart Now" with title "Update Complete" with icon note
 end tell
 `, msg)
 
@@ -151,6 +152,13 @@ end tell
 			log.Printf("Failed to show update success dialog: %v", err)
 		}
 
-		log.Printf("Update completed successfully to version %s. Restart required.", release.TagName)
+		log.Printf("Update completed successfully to version %s. Restarting...", release.TagName)
+		// Restart memofy-core via launchctl so it also picks up the new binary.
+		restartCore := exec.Command("launchctl", "kickstart", "-k", "gui/"+fmt.Sprintf("%d", os.Getuid())+"/com.memofy.core")
+		if err := restartCore.Run(); err != nil {
+			log.Printf("Warning: could not restart memofy-core via launchctl: %v", err)
+		}
+		// Exit with non-zero so launchd (KeepAlive) restarts the process with the new binary.
+		os.Exit(42)
 	}()
 }
