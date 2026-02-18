@@ -50,11 +50,17 @@ tasks:
     deps: [build]
     cmds:
       - mkdir -p {{.INSTALL_DIR}}
+      # Run install-launchagent.sh first (it copies from bin/ and sets up launchd).
+      # Then overwrite with the freshly-built binaries from build/ so the correct
+      # version is always installed. This order matters: install-launchagent.sh
+      # uses bin/ as source, which may be stale.
+      - bash scripts/install-launchagent.sh
       - cp build/{{.BINARY_CORE}} {{.INSTALL_DIR}}/
       - cp build/{{.BINARY_UI}} {{.INSTALL_DIR}}/
       - chmod +x {{.INSTALL_DIR}}/{{.BINARY_CORE}}
       - chmod +x {{.INSTALL_DIR}}/{{.BINARY_UI}}
-      - bash scripts/install-launchagent.sh
+      # Restart memofy-ui so it immediately picks up the newly installed binary.
+      - launchctl kickstart -k gui/$(id -u)/com.memofy.ui 2>/dev/null || true
       - echo "✓ Installed to {{.INSTALL_DIR}}"
 
   uninstall:
