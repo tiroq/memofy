@@ -271,7 +271,7 @@ install_helper_script() {
     fi
 }
 
-# Install config and LaunchAgent
+# Install config and LaunchAgents for both core and ui
 install_config() {
     print_info "Installing configuration..."
     
@@ -311,41 +311,57 @@ EOF
             print_success "Created default configuration"
         fi
     fi
-    
-    # Install LaunchAgent (create plist if source not available)
-    local plist_path="$LAUNCHAGENTS_DIR/com.memofy.core.plist"
-    if [ -f "scripts/com.memofy.core.plist" ]; then
-        sed "s|INSTALL_DIR|$INSTALL_DIR|g" scripts/com.memofy.core.plist > "$plist_path"
-    else
-        # Create LaunchAgent plist
-        cat > "$plist_path" << EOF
+
+    # Helper: write a single launchd plist and load it
+    _install_launchd_service() {
+        local label=$1        # e.g. com.memofy.core
+        local binary=$2       # absolute path
+        local log_base=$3     # e.g. memofy-core
+        local throttle=$4     # ThrottleInterval seconds
+        local plist_path="$LAUNCHAGENTS_DIR/${label}.plist"
+
+        cat > "$plist_path" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.memofy.core</string>
+    <string>${label}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$INSTALL_DIR/memofy-core</string>
+        <string>${binary}</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <true/>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
     <key>StandardOutPath</key>
-    <string>/tmp/memofy-core.out.log</string>
+    <string>/tmp/${log_base}.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/memofy-core.err.log</string>
+    <string>/tmp/${log_base}.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>ThrottleInterval</key>
+    <integer>${throttle}</integer>
 </dict>
 </plist>
-EOF
-    fi
-    
-    launchctl unload "$plist_path" 2>/dev/null || true
-    launchctl load "$plist_path" 2>/dev/null || true
+PLIST
+        launchctl unload "$plist_path" 2>/dev/null || true
+        launchctl load "$plist_path"
+    }
+
+    _install_launchd_service "com.memofy.core" "$INSTALL_DIR/memofy-core" "memofy-core" 10
+    _install_launchd_service "com.memofy.ui"   "$INSTALL_DIR/memofy-ui"   "memofy-ui"   5
+
     print_success "LaunchAgent installed and loaded"
-    
     print_success "Configuration installed"
 }
 
@@ -393,45 +409,34 @@ setup_obs() {
     fi
 }
 
-# Start menu bar UI
+# Start menu bar UI via launchd (avoids duplicate-process race with KeepAlive)
 start_ui() {
     print_info "Starting Memofy menu bar UI..."
-    
-    # Use helper script if available for better process management  
-    if [ -f "$INSTALL_DIR/memofy-ctl" ]; then
-        "$INSTALL_DIR/memofy-ctl" stop ui 2>/dev/null || true
+
+    # The UI is now managed by launchd (com.memofy.ui). Using launchctl stop/start
+    # is the only safe way to restart it — killing the process directly causes launchd
+    # to immediately respawn it, and any manual start then produces a duplicate.
+    if launchctl list 2>/dev/null | grep -q "com.memofy.ui"; then
+        # Service is loaded — bounce it so the newly-installed binary is used
+        launchctl stop com.memofy.ui 2>/dev/null || true
+        sleep 1
+        launchctl start com.memofy.ui 2>/dev/null || true
     else
-        # Kill any existing instances gracefully (SIGTERM allows defer cleanup)
-        if pgrep -q memofy-ui; then
-            killall memofy-ui 2>/dev/null || true
-            sleep 2  # Wait for graceful shutdown
-        fi
-    fi
-    
-    # Clean up any stale PID files
-    rm -f "$HOME/.cache/memofy/memofy-ui.pid" 2>/dev/null || true
-    
-    # Start daemon if not running
-    launchctl start com.memofy.core 2>/dev/null || true
-    
-    # Start UI (no need for nohup, memofy-ctl handles backgrounding)
-    if [ -f "$INSTALL_DIR/memofy-ctl" ]; then
-        "$INSTALL_DIR/memofy-ctl" start ui
-    else
-        # Fallback: start directly in background
+        # Service not loaded yet (install_config may not have run) — start directly
         "$INSTALL_DIR/memofy-ui" >> /tmp/memofy-ui.out.log 2>&1 &
     fi
-    
-    sleep 3
-    
-    # Verify it's running (check actual process, not just PID file)
+
+    # Also ensure core is running
+    launchctl start com.memofy.core 2>/dev/null || true
+
+    sleep 2
+
     if pgrep -q memofy-ui; then
         print_success "Memofy is running in menu bar (look for the icon ⚫ at the top of your screen)"
     else
         print_error "Menu bar UI failed to start"
-        print_info "Checking logs..."
-        if [ -f /tmp/memofy-ui.out.log ]; then
-            tail -10 /tmp/memofy-ui.out.log | grep -i "error\|fatal\|panic" || print_warn "No obvious errors in logs"
+        if [ -f /tmp/memofy-ui.err.log ]; then
+            tail -10 /tmp/memofy-ui.err.log | grep -i "error\|fatal\|panic" || print_warn "No obvious errors in logs"
         fi
         print_info "Try running manually to see errors: ~/.local/bin/memofy-ui"
         return 1
