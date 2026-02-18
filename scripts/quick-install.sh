@@ -181,6 +181,43 @@ build_from_source() {
     print_success "Build complete"
 }
 
+# Stop any running memofy processes before install/upgrade
+stop_running_processes() {
+    print_info "Stopping any running Memofy processes..."
+
+    # Gracefully stop via launchd if services are loaded
+    if launchctl list 2>/dev/null | grep -q "com.memofy.ui"; then
+        launchctl stop com.memofy.ui 2>/dev/null || true
+    fi
+    if launchctl list 2>/dev/null | grep -q "com.memofy.core"; then
+        launchctl stop com.memofy.core 2>/dev/null || true
+    fi
+
+    # Give processes a moment to exit cleanly
+    sleep 2
+
+    # Kill any stragglers that survived the launchd stop
+    pkill -x memofy-ui  2>/dev/null || true
+    pkill -x memofy-core 2>/dev/null || true
+
+    # Wait for them to actually exit (up to 5s)
+    local waited=0
+    while pgrep -qx "memofy-ui" 2>/dev/null || pgrep -qx "memofy-core" 2>/dev/null; do
+        if [ $waited -ge 5 ]; then
+            print_warn "Processes did not exit in time; forcing kill..."
+            pkill -9 -x memofy-ui  2>/dev/null || true
+            pkill -9 -x memofy-core 2>/dev/null || true
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    # Clean up stale PID files
+    rm -f "$HOME/.cache/memofy/memofy-core.pid" "$HOME/.cache/memofy/memofy-ui.pid" 2>/dev/null || true
+    print_success "Memofy processes stopped"
+}
+
 # Install binaries
 install_binaries() {
     print_info "Installing binaries..."
@@ -203,8 +240,8 @@ install_binaries() {
         exit 1
     fi
     
-    # Clean up any stale PID files before installing new binaries
-    rm -f "$HOME/.cache/memofy/memofy-core.pid" "$HOME/.cache/memofy/memofy-ui.pid" 2>/dev/null || true
+    # Stop running processes and clean up PID files before replacing binaries
+    stop_running_processes
     
     cp "$core_binary" "$INSTALL_DIR/memofy-core"
     cp "$ui_binary" "$INSTALL_DIR/memofy-ui"
