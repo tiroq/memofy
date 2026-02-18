@@ -60,15 +60,22 @@ build_macos() {
     local arch=$1
     local output_dir="$BUILD_DIR/memofy-$VERSION-darwin-$arch"
     
+    # Use native arm64 Go toolchain if building arm64 (avoids Rosetta + darwinkit crash on macOS 26+)
+    local GO_BIN="go"
+    if [[ "$arch" == "arm64" && -x "/usr/local/go-arm64/bin/go" ]]; then
+        GO_BIN="/usr/local/go-arm64/bin/go"
+        echo "Using native arm64 Go toolchain: $GO_BIN"
+    fi
+    
     echo "Building for macOS $arch..."
     mkdir -p "$output_dir"
     
-    GOOS=darwin GOARCH=$arch CGO_ENABLED=1 go build \
+    GOOS=darwin GOARCH=$arch CGO_ENABLED=1 $GO_BIN build \
         -o "$output_dir/memofy-core" \
         -ldflags "-X main.Version=$VERSION" \
         cmd/memofy-core/main.go
     
-    GOOS=darwin GOARCH=$arch CGO_ENABLED=1 go build \
+    GOOS=darwin GOARCH=$arch CGO_ENABLED=1 $GO_BIN build \
         -o "$output_dir/memofy-ui" \
         -ldflags "-X main.Version=$VERSION" \
         cmd/memofy-ui/main.go
