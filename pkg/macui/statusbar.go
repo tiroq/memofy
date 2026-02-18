@@ -370,6 +370,11 @@ func (app *StatusBarApp) rebuildMenu() {
 	action.Set(logsItem, app.OpenLogs)
 	app.menu.AddItem(logsItem)
 
+	checkUpdateItem := appkit.NewMenuItem()
+	checkUpdateItem.SetTitle("🔄 Check for Updates")
+	action.Set(checkUpdateItem, app.CheckForUpdates)
+	app.menu.AddItem(checkUpdateItem)
+
 	aboutItem := appkit.NewMenuItem()
 	aboutItem.SetTitle("ℹ️ About Memofy")
 	action.Set(aboutItem, app.ShowAbout)
