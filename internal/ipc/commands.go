@@ -15,6 +15,7 @@ const (
 	CmdToggle Command = "toggle" // Toggle recording state
 	CmdAuto   Command = "auto"   // Switch to auto mode
 	CmdPause  Command = "pause"  // Switch to paused mode
+	CmdManual Command = "manual" // Switch to manual mode (detect but never auto-control OBS)
 	CmdQuit   Command = "quit"   // Shutdown daemon
 )
 
@@ -53,7 +54,7 @@ func ReadCommand() (Command, error) {
 
 	// Validate it's a known command
 	switch cmd {
-	case CmdStart, CmdStop, CmdToggle, CmdAuto, CmdPause, CmdQuit:
+	case CmdStart, CmdStop, CmdToggle, CmdAuto, CmdPause, CmdManual, CmdQuit:
 		return cmd, nil
 	case "":
 		return "", nil // Empty file
