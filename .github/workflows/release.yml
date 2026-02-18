@@ -20,19 +20,16 @@ permissions:
 
 jobs:
   build-and-release:
-    name: Build and Release
-    runs-on: ${{ matrix.os }}
+    name: Build and Release (${{ matrix.goarch }})
+    runs-on: macos-latest
     strategy:
+      fail-fast: false
       matrix:
-        os: [macos-latest]
-        goarch: [arm64, amd64]
         include:
-          - os: macos-latest
-            goos: darwin
+          - goos: darwin
             goarch: arm64
             artifact_name: memofy-macos-arm64
-          - os: macos-latest
-            goos: darwin
+          - goos: darwin
             goarch: amd64
             artifact_name: memofy-macos-amd64
 
@@ -41,15 +38,16 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+          cache: true
 
       - name: Extract version from tag
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
-      - name: Build memofy-core
+      - name: Build binaries
         shell: bash
         env:
           GOOS: ${{ matrix.goos }}
@@ -57,17 +55,9 @@ jobs:
           CGO_ENABLED: '1'
         run: |
           mkdir -p bin
-          go build -o "bin/memofy-core-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-core/main.go
-
-      - name: Build memofy-ui
-        shell: bash
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: '1'
-        run: |
-          mkdir -p bin
-          go build -o "bin/memofy-ui-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-ui/main.go
+          go build -o "bin/memofy-core-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-core &
+          go build -o "bin/memofy-ui-${{ matrix.artifact_name }}"  -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-ui  &
+          wait
 
       - name: Sign binaries (macOS)
         if: matrix.goos == 'darwin'
@@ -75,26 +65,26 @@ jobs:
           echo "Signing binaries with ad-hoc signature..."
           codesign --force --deep --sign - "bin/memofy-core-${{ matrix.artifact_name }}"
           codesign --force --deep --sign - "bin/memofy-ui-${{ matrix.artifact_name }}"
-          
+
           echo "Verifying signatures..."
           codesign --verify --verbose "bin/memofy-core-${{ matrix.artifact_name }}"
           codesign --verify --verbose "bin/memofy-ui-${{ matrix.artifact_name }}"
-          
+
           echo "✓ Binaries signed successfully"
 
       - name: Create archive
         run: |
-          mkdir -p "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
-          cp bin/memofy-core-* "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy-core"
-          cp bin/memofy-ui-* "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy-ui"
-          cp README.md LICENSE "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" || true
-          cp -r configs scripts "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" || true
-          tar czf "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" \
-            "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
-          rm -rf "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          ARCHIVE_DIR="memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p "$ARCHIVE_DIR"
+          cp "bin/memofy-core-${{ matrix.artifact_name }}" "$ARCHIVE_DIR/memofy-core"
+          cp "bin/memofy-ui-${{ matrix.artifact_name }}"  "$ARCHIVE_DIR/memofy-ui"
+          cp README.md LICENSE "$ARCHIVE_DIR/" || true
+          cp -r configs scripts "$ARCHIVE_DIR/" || true
+          tar czf "$ARCHIVE_DIR.tar.gz" "$ARCHIVE_DIR"
+          rm -rf "$ARCHIVE_DIR"
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ github.workspace }}/memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.*
@@ -137,9 +127,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+          cache: true
 
       - name: Extract version from tag
         id: version
@@ -153,7 +144,7 @@ jobs:
           CGO_ENABLED: '0'
         run: |
           mkdir -p bin
-          go build -o "bin/memofy-core-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-core/main.go
+          go build -o "bin/memofy-core-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-core
 
       - name: Create archive (Unix)
         if: runner.os != 'Windows'
@@ -179,7 +170,7 @@ jobs:
           Remove-Item -Path "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}" -Recurse
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ github.workspace }}/memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.*
