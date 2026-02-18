@@ -10,6 +10,7 @@ import (
 
 	"github.com/progrium/darwinkit/helper/action"
 	"github.com/progrium/darwinkit/macos/appkit"
+	"github.com/progrium/darwinkit/macos/foundation"
 	"github.com/progrium/darwinkit/objc"
 	"github.com/tiroq/memofy/internal/autoupdate"
 	"github.com/tiroq/memofy/internal/config"
@@ -237,17 +238,19 @@ func (app *StatusBarApp) updateMenuBarIcon() {
 	button.SetTitle(icon)
 }
 
-// rebuildMenu reconstructs the menu based on current status
-// This is called when the menu is opened, which always happens on the main thread
-func (app *StatusBarApp) rebuildMenu() {
-	// Apply any pending updates before rebuilding (safe since we're on main thread when menu opens)
-	if app.HasPendingUpdate() {
-		log.Printf("[DEBUG] ✓ Menu click detected - applying pending update on main thread")
+// StartUpdateTimer schedules a repeating NSTimer on the main run loop that flushes
+// any pending status updates every 500ms. Must be called from the main thread,
+// after app.Run() has started (or just before — the timer fires on the run loop).
+func (app *StatusBarApp) StartUpdateTimer() {
+	foundation.Timer_ScheduledTimerWithTimeIntervalRepeatsBlock(0.5, true, func(_ foundation.Timer) {
 		app.ApplyPendingUpdate()
-		// ApplyPendingUpdate may call rebuildMenu again, so return to avoid double rebuild
-		return
-	}
+	})
+	log.Println("✓ UI update timer started (0.5s interval)")
+}
 
+// rebuildMenu reconstructs the menu based on current status
+// Called from ApplyPendingUpdate (via timer on main thread) and when menu opens.
+func (app *StatusBarApp) rebuildMenu() {
 	app.menu.RemoveAllItems()
 
 	status := app.currentStatus
