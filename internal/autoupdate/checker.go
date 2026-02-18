@@ -1,7 +1,9 @@
 package autoupdate
 
 import (
+	"archive/tar"
 	"archive/zip"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -208,30 +210,26 @@ func (uc *UpdateChecker) DownloadAndInstall(release *Release) error {
 	return nil
 }
 
-// findBinaryAsset finds the appropriate binary for the current platform
+// findBinaryAsset finds the appropriate binary for the current platform.
+// Release assets are named like: memofy-0.8.2-darwin-arm64.tar.gz
 func (uc *UpdateChecker) findBinaryAsset(release *Release) *Asset {
-	// Determine platform and architecture
-	osName := "darwin" // macOS
-	arch := "arm64"    // Apple Silicon (most common)
-
-	// Check if running on Intel Mac
+	osName := "darwin"
+	arch := "arm64" // Apple Silicon default
 	if isIntelMac() {
 		arch = "amd64"
 	}
 
-	// Look for matching binary
-	pattern := fmt.Sprintf("memofy-%s-%s.zip", osName, arch)
-
-	for _, asset := range release.Assets {
-		if strings.Contains(asset.Name, pattern) {
-			return &asset
+	// Match versioned names: memofy-VERSION-darwin-arm64.tar.gz
+	for i, asset := range release.Assets {
+		if strings.Contains(asset.Name, osName+"-"+arch) {
+			return &release.Assets[i]
 		}
 	}
 
-	// Fallback to generic darwin binary
-	for _, asset := range release.Assets {
+	// Fallback: any darwin asset
+	for i, asset := range release.Assets {
 		if strings.Contains(asset.Name, "darwin") {
-			return &asset
+			return &release.Assets[i]
 		}
 	}
 
@@ -276,13 +274,86 @@ func (uc *UpdateChecker) downloadAsset(asset *Asset) (string, error) {
 
 // installFromArchive extracts and installs binaries from archive
 func (uc *UpdateChecker) installFromArchive(archivePath, archiveName string) error {
-	// Determine if it's a zip or tar.gz
-	if strings.HasSuffix(archiveName, ".zip") {
+	switch {
+	case strings.HasSuffix(archiveName, ".tar.gz") || strings.HasSuffix(archiveName, ".tgz"):
+		return uc.installFromTarGz(archivePath)
+	case strings.HasSuffix(archiveName, ".zip"):
 		return uc.installFromZip(archivePath)
+	default:
+		return fmt.Errorf("unsupported archive format: %s", archiveName)
+	}
+}
+
+// installFromTarGz extracts and installs from a .tar.gz file
+func (uc *UpdateChecker) installFromTarGz(archivePath string) error {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return fmt.Errorf("failed to open archive: %w", err)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Printf("Warning: failed to close archive: %v", err)
+		}
+	}()
+
+	gzr, err := gzip.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("failed to create gzip reader: %w", err)
+	}
+	defer func() {
+		if err := gzr.Close(); err != nil {
+			log.Printf("Warning: failed to close gzip reader: %v", err)
+		}
+	}()
+
+	tempDir := filepath.Join(os.TempDir(), "memofy-update")
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
+		return fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			log.Printf("Warning: failed to remove temp dir: %v", err)
+		}
+	}()
+
+	tr := tar.NewReader(gzr)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read tar: %w", err)
+		}
+
+		// Security: prevent path traversal
+		target := filepath.Join(tempDir, filepath.Clean("/"+hdr.Name))
+
+		if hdr.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return fmt.Errorf("failed to create dir: %w", err)
+			}
+			continue
+		}
+
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return fmt.Errorf("failed to create parent dir: %w", err)
+		}
+
+		out, err := os.Create(target)
+		if err != nil {
+			return fmt.Errorf("failed to create file: %w", err)
+		}
+		_, copyErr := io.Copy(out, tr)
+		if closeErr := out.Close(); closeErr != nil {
+			log.Printf("Warning: failed to close extracted file: %v", closeErr)
+		}
+		if copyErr != nil {
+			return fmt.Errorf("failed to extract file: %w", copyErr)
+		}
 	}
 
-	// Could add tar.gz support here for Linux/other platforms
-	return fmt.Errorf("unsupported archive format: %s", archiveName)
+	return uc.installBinaries(tempDir)
 }
 
 // installFromZip extracts and installs from a zip file
@@ -370,36 +441,41 @@ func (uc *UpdateChecker) installFromZip(zipPath string) error {
 
 // installBinaries copies binaries to install directory
 func (uc *UpdateChecker) installBinaries(sourceDir string) error {
+	if err := os.MkdirAll(uc.installDir, 0755); err != nil {
+		return fmt.Errorf("failed to create install dir %s: %w", uc.installDir, err)
+	}
+
 	binaries := []string{"memofy-core", "memofy-ui"}
 
 	for _, binary := range binaries {
-		// Find the binary in the extracted directory
+		// Walk the entire extracted tree; use the last match so nested dirs work.
 		var sourcePath string
-		err := filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
+		_ = filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() {
+				return nil
 			}
-			if !info.IsDir() && strings.Contains(info.Name(), binary) {
+			// Exact name match or name == "memofy-core-darwin-arm64" style
+			base := info.Name()
+			if base == binary || strings.HasPrefix(base, binary) {
 				sourcePath = path
-				return filepath.SkipDir
 			}
 			return nil
 		})
 
-		if err != nil || sourcePath == "" {
-			return fmt.Errorf("binary %s not found in archive", binary)
+		if sourcePath == "" {
+			// Non-fatal: archive may only contain one binary
+			log.Printf("Warning: binary %s not found in archive, skipping", binary)
+			continue
 		}
 
-		// Copy to install directory
 		destPath := filepath.Join(uc.installDir, binary)
 		if err := copyFile(sourcePath, destPath); err != nil {
 			return fmt.Errorf("failed to install %s: %w", binary, err)
 		}
-
-		// Make executable
 		if err := os.Chmod(destPath, 0755); err != nil {
 			log.Printf("Warning: failed to chmod %s: %v", destPath, err)
 		}
+		log.Printf("✓ Installed %s → %s", binary, destPath)
 	}
 
 	return nil
