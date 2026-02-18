@@ -429,6 +429,55 @@ func (app *StatusBarApp) OpenLogs(sender objc.Object) {
 	}
 }
 
+// RegisterHotkeys registers global keyboard shortcuts for mode switching.
+// Shortcuts work system-wide regardless of which app is focused.
+//
+//	⌘⇧A → Auto mode
+//	⌘⇧M → Manual mode
+//	⌘⇧P → Pause/resume detection
+//
+// Note: macOS requires Accessibility permission for global key monitoring.
+// If permission is not granted the handler is registered but will receive no events.
+func (app *StatusBarApp) RegisterHotkeys() {
+	const cmdShift = appkit.EventModifierFlagCommand | appkit.EventModifierFlagShift
+	const relevantMask = appkit.EventModifierFlagCommand | appkit.EventModifierFlagShift |
+		appkit.EventModifierFlagOption | appkit.EventModifierFlagControl
+
+	appkit.Event_AddGlobalMonitorForEventsMatchingMaskHandler(
+		appkit.EventMaskKeyDown,
+		func(event appkit.Event) {
+			// Read per-event modifier flags via objc runtime (instance property)
+			flags := objc.Call[appkit.EventModifierFlags](event, objc.Sel("modifierFlags"))
+			// Only act when exactly ⌘⇧ is held (ignore Option/Ctrl combos)
+			if flags&relevantMask != cmdShift {
+				return
+			}
+			ch := event.CharactersIgnoringModifiers()
+			switch ch {
+			case "a", "A":
+				log.Println("[Hotkey] ⌘⇧A → Auto mode")
+				app.sendCommand(ipc.CmdAuto)
+				if err := SendNotification("Memofy", "Mode Changed", "Auto: detection active, OBS controlled automatically"); err != nil {
+					log.Printf("Warning: failed to send notification: %v", err)
+				}
+			case "m", "M":
+				log.Println("[Hotkey] ⌘⇧M → Manual mode")
+				app.sendCommand(ipc.CmdManual)
+				if err := SendNotification("Memofy", "Mode Changed", "Manual: detection active, you control OBS recording"); err != nil {
+					log.Printf("Warning: failed to send notification: %v", err)
+				}
+			case "p", "P":
+				log.Println("[Hotkey] ⌘⇧P → Pause mode")
+				app.sendCommand(ipc.CmdPause)
+				if err := SendNotification("Memofy", "Mode Changed", "Paused: all detection suspended"); err != nil {
+					log.Printf("Warning: failed to send notification: %v", err)
+				}
+			}
+		},
+	)
+	log.Println("✓ Global hotkeys registered: ⌘⇧A=Auto, ⌘⇧M=Manual, ⌘⇧P=Pause")
+}
+
 // ShowSettings opens the settings window (T082-T084)
 func (app *StatusBarApp) ShowSettings(sender objc.Object) {
 	if err := app.settingsWindow.showSimpleSettingsDialog(); err != nil {
