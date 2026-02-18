@@ -300,27 +300,77 @@ set_mode() {
     esac
 }
 
+# Generate plist content inline (no external file dependency)
+_plist_content() {
+    local label=$1      # e.g. com.memofy.core
+    local binary=$2     # absolute path to binary
+    local log_base=$3   # e.g. memofy-core  →  /tmp/memofy-core.{out,err}.log
+    local throttle=$4   # seconds between restarts
+
+    cat <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${label}</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>${binary}</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/${log_base}.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/${log_base}.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>ThrottleInterval</key>
+    <integer>${throttle}</integer>
+</dict>
+</plist>
+PLIST
+}
+
 # Install launchd services for both components
 install_services() {
     local component=${1:-all}
     local launchagents_dir="$HOME/Library/LaunchAgents"
-    local script_dir
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
     mkdir -p "$launchagents_dir"
 
     install_plist() {
         local label=$1
-        local plist_src="$script_dir/${label}.plist"
         local plist_dst="$launchagents_dir/${label}.plist"
 
-        if [ ! -f "$plist_src" ]; then
-            print_error "Plist template not found: $plist_src"
-            return 1
-        fi
+        case "$label" in
+            com.memofy.core)
+                _plist_content "$label" "$INSTALL_DIR/memofy-core" "memofy-core" 10 > "$plist_dst"
+                ;;
+            com.memofy.ui)
+                _plist_content "$label" "$INSTALL_DIR/memofy-ui"   "memofy-ui"   5  > "$plist_dst"
+                ;;
+        esac
 
-        # Substitute INSTALL_DIR placeholder
-        sed "s|INSTALL_DIR|$INSTALL_DIR|g" "$plist_src" > "$plist_dst"
         print_info "Installed $plist_dst"
 
         # Unload first if already loaded (ignore error if not loaded)
