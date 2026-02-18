@@ -86,6 +86,17 @@ func SaveDetectionRules(config *DetectionConfig) error {
 	return os.WriteFile(configPath, data, 0644)
 }
 
+// RuleByApp returns the first DetectionRule whose Application field matches
+// appName, or nil if no such rule exists.
+func (c *DetectionConfig) RuleByApp(appName string) *DetectionRule {
+	for i := range c.Rules {
+		if c.Rules[i].Application == appName {
+			return &c.Rules[i]
+		}
+	}
+	return nil
+}
+
 // Validate checks DetectionConfig for validity
 func (c *DetectionConfig) Validate() error {
 	// PollInterval must be between 1 and 10 seconds
