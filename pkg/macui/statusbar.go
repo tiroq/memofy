@@ -77,6 +77,9 @@ func NewStatusBarApp(version string) *StatusBarApp {
 	// Create status bar item
 	app.createStatusBar()
 
+	// Register global keyboard shortcuts
+	app.RegisterHotkeys()
+
 	return app
 }
 
@@ -303,6 +306,16 @@ func (app *StatusBarApp) rebuildMenu() {
 	action.Set(autoItem, app.SetAutoMode)
 	app.menu.AddItem(autoItem)
 
+	manualItem := appkit.NewMenuItem()
+	manualItem.SetTitle("🎛 Manual Mode")
+	if status.Mode == ipc.ModeManual {
+		manualItem.SetState(appkit.OnState)
+	} else {
+		manualItem.SetState(appkit.OffState)
+	}
+	action.Set(manualItem, app.SetManualMode)
+	app.menu.AddItem(manualItem)
+
 	pauseItem := appkit.NewMenuItem()
 	pauseItem.SetTitle("⏸ Pause Detection")
 	if status.Mode == ipc.ModePaused {
@@ -382,7 +395,15 @@ func (app *StatusBarApp) StopRecording(sender objc.Object) {
 // SetAutoMode sends auto mode command (T077)
 func (app *StatusBarApp) SetAutoMode(sender objc.Object) {
 	app.sendCommand(ipc.CmdAuto)
-	if err := SendNotification("Memofy", "Mode Changed", "Automatic detection enabled"); err != nil {
+	if err := SendNotification("Memofy", "Mode Changed", "Auto: detection active, OBS controlled automatically"); err != nil {
+		log.Printf("Warning: failed to send notification: %v", err)
+	}
+}
+
+// SetManualMode sends manual mode command
+func (app *StatusBarApp) SetManualMode(sender objc.Object) {
+	app.sendCommand(ipc.CmdManual)
+	if err := SendNotification("Memofy", "Mode Changed", "Manual: detection active, you control OBS recording"); err != nil {
 		log.Printf("Warning: failed to send notification: %v", err)
 	}
 }
@@ -390,7 +411,7 @@ func (app *StatusBarApp) SetAutoMode(sender objc.Object) {
 // SetPauseMode sends pause command (T077)
 func (app *StatusBarApp) SetPauseMode(sender objc.Object) {
 	app.sendCommand(ipc.CmdPause)
-	if err := SendNotification("Memofy", "Mode Changed", "Monitoring paused"); err != nil {
+	if err := SendNotification("Memofy", "Mode Changed", "Paused: all detection suspended"); err != nil {
 		log.Printf("Warning: failed to send notification: %v", err)
 	}
 }
@@ -518,8 +539,11 @@ func getStatusIcon(status *ipc.StatusSnapshot) string {
 		return "⚠️"
 	}
 	if status.OBSConnected {
-		if status.Mode == ipc.ModePaused {
+		switch status.Mode {
+		case ipc.ModePaused:
 			return "⏸"
+		case ipc.ModeManual:
+			return "🎛"
 		}
 		return "🔴"
 	}
