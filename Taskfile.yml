@@ -212,13 +212,23 @@ tasks:
         # Get repo owner/name from git remote
         repo=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || git config --get remote.origin.url | sed -E 's|.*/([^/]+/[^/]+)(\.git)?$|\1|')
         echo "→ Waiting for release workflow to start for {{.CHECK_VERSION}}..."
+        # Give GitHub a moment to register the push before polling
+        sleep 8
         attempts=0
         run_id=""
-        while [ $attempts -lt 30 ]; do
-          # Use gh api to get workflow runs for the specific tag ref
+        # Get the commit SHA the tag points to, for fallback matching
+        tag_sha=$(git rev-list -n1 "{{.CHECK_VERSION}}" 2>/dev/null || echo "")
+        while [ $attempts -lt 60 ]; do
+          # Primary: match by head_branch (tag name)
           run_id=$(gh api "repos/$repo/actions/workflows/release.yml/runs?event=push&per_page=20" \
             --jq '.workflow_runs[] | select(.head_branch == "{{.CHECK_VERSION}}") | .id' \
             | head -1)
+          # Fallback: match by head SHA when GitHub hasn't set head_branch yet
+          if [ -z "$run_id" ] && [ -n "$tag_sha" ]; then
+            run_id=$(gh api "repos/$repo/actions/workflows/release.yml/runs?event=push&per_page=20" \
+              --jq --arg sha "$tag_sha" '.workflow_runs[] | select(.head_sha == $sha) | .id' \
+              | head -1)
+          fi
           if [ -n "$run_id" ]; then
             break
           fi
