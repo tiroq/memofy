@@ -387,7 +387,8 @@ func (app *StatusBarApp) rebuildMenu() {
 	app.menu.AddItem(quitItem)
 }
 
-// ShowAbout displays the About dialog
+// ShowAbout displays the About dialog.
+// Runs synchronously on the main thread (standard NSMenu action pattern).
 func (app *StatusBarApp) ShowAbout(sender objc.Object) {
 	if err := app.aboutWindow.Show(); err != nil {
 		log.Printf("Failed to show About dialog: %v", err)
@@ -395,6 +396,14 @@ func (app *StatusBarApp) ShowAbout(sender objc.Object) {
 			log.Printf("Warning: failed to send notification: %v", notifErr)
 		}
 	}
+}
+
+// CheckForUpdates checks for a newer version and offers to install it.
+// Runs synchronously on the main thread (standard NSMenu action pattern).
+// The underlying HTTP call and dialogs block the run loop briefly but this is
+// identical to how ShowAbout has always worked.
+func (app *StatusBarApp) CheckForUpdates(sender objc.Object) {
+	app.aboutWindow.RunUpdateCheck()
 }
 
 // sendCommand writes a command to the daemon
