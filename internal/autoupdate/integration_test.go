@@ -87,7 +87,7 @@ func TestIsUpdateAvailableWithOldVersion(t *testing.T) {
 		version   string
 		wantAvail bool
 	}{
-		{"0.0.1", true},  // very old — update must be available
+		{"0.0.1", true},   // very old — update must be available
 		{"99.0.0", false}, // future version — no update available
 	}
 
