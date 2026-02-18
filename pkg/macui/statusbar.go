@@ -561,7 +561,7 @@ func (app *StatusBarApp) RegisterHotkeys() {
 
 // ShowSettings opens the settings window (T082-T084)
 func (app *StatusBarApp) ShowSettings(sender objc.Object) {
-	if err := app.settingsWindow.showSimpleSettingsDialog(); err != nil {
+	if err := app.settingsWindow.Show(); err != nil {
 		log.Printf("Failed to show settings: %v", err)
 		if notifErr := SendNotification("Memofy", "Error", "Could not open settings"); notifErr != nil {
 			log.Printf("Warning: failed to send notification: %v", notifErr)
