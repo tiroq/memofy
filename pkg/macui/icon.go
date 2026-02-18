@@ -60,43 +60,56 @@ func tintedMenubarIcon(color appkit.Color) appkit.Image {
 	return tinted
 }
 
-// iconForStatus returns the correct tinted logo image for the given status.
+// iconForStatus returns the tinted logo image for the current status.
 //
-// Color scheme:
-//   - Error       → systemRed
-//   - Recording   → systemRed (bright, active)
-//   - Paused      → systemOrange
-//   - Meeting det.→ systemYellow
-//   - OBS conn.   → systemGreen
-//   - Idle        → systemGray
+// Priority (high → low):
+//  1. Error                  → red    (something is wrong)
+//  2. Actively recording     → red    (REC in progress)
+//  3. Mode = Paused          → orange (detection suspended)
+//  4. Mode = Manual          → blue   (user drives recording)
+//  5. Mode = Auto + OBS conn → green  (auto-detection active)
+//  6. Meeting detected, no OBS → yellow (meeting seen but OBS not ready)
+//  7. Idle / no OBS          → gray   (inactive)
 func iconForStatus(status *ipc.StatusSnapshot) appkit.Image {
 	if status == nil {
 		return tintedMenubarIcon(appkit.Color_SystemGrayColor())
 	}
 
+	// 1. Error — highest priority, always red
 	if status.LastError != "" {
 		return tintedMenubarIcon(appkit.Color_SystemRedColor())
 	}
 
-	// Check if actively recording
+	// 2. Actively recording — red regardless of mode
 	if isActivelyRecording(status) {
 		return tintedMenubarIcon(appkit.Color_SystemRedColor())
 	}
 
-	if status.OBSConnected {
-		switch status.Mode {
-		case ipc.ModePaused:
-			return tintedMenubarIcon(appkit.Color_SystemOrangeColor())
-		case ipc.ModeManual:
-			return tintedMenubarIcon(appkit.Color_SystemBlueColor())
+	// 3-5. Mode drives the color when not recording
+	switch status.Mode {
+	case ipc.ModePaused:
+		// Paused: all detection suspended — orange
+		return tintedMenubarIcon(appkit.Color_SystemOrangeColor())
+
+	case ipc.ModeManual:
+		// Manual: user controls recording — blue
+		return tintedMenubarIcon(appkit.Color_SystemBlueColor())
+
+	case ipc.ModeAuto:
+		if status.OBSConnected {
+			// Auto + OBS ready — green (healthy, watching)
+			return tintedMenubarIcon(appkit.Color_SystemGreenColor())
 		}
-		return tintedMenubarIcon(appkit.Color_SystemGreenColor())
+		// Auto but OBS not connected yet
+		if status.TeamsDetected || status.ZoomDetected || status.GoogleMeetActive {
+			// Meeting detected but can't record — yellow (attention)
+			return tintedMenubarIcon(appkit.Color_SystemYellowColor())
+		}
+		// Waiting for OBS — gray
+		return tintedMenubarIcon(appkit.Color_SystemGrayColor())
 	}
 
-	if status.TeamsDetected || status.ZoomDetected || status.GoogleMeetActive {
-		return tintedMenubarIcon(appkit.Color_SystemYellowColor())
-	}
-
+	// Fallback (unknown mode)
 	return tintedMenubarIcon(appkit.Color_SystemGrayColor())
 }
 
