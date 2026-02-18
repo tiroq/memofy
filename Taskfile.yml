@@ -236,7 +236,7 @@ tasks:
           # Fallback: match by head SHA when GitHub hasn't set head_branch yet
           if [ -z "$run_id" ] && [ -n "$tag_sha" ]; then
             run_id=$(gh api "repos/$repo/actions/workflows/release.yml/runs?event=push&per_page=20" \
-              --jq --arg sha "$tag_sha" '.workflow_runs[] | select(.head_sha == $sha) | .id' \
+              --jq ".workflow_runs[] | select(.head_sha == \"$tag_sha\") | .id" \
               | head -1)
           fi
           if [ -n "$run_id" ]; then
