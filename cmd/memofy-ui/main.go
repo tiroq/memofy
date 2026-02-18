@@ -120,6 +120,11 @@ func main() {
 	log.Println("[STARTUP] Starting status file watcher...")
 	go watchStatusFile()
 
+	// Start NSTimer that flushes pending status updates on the main run loop.
+	// This ensures the menu always reflects current state without relying on
+	// the user opening the menu to trigger an update.
+	statusBarApp.StartUpdateTimer()
+
 	log.Println("===========================================")
 	log.Println("[RUNNING] Memofy UI is running")
 	log.Println("===========================================")
