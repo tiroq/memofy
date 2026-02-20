@@ -69,11 +69,11 @@
 **Independent Test**: `ForceStart()` → send auto-origin `StopRecording` request → assert recording still active and log shows `recording_stop_rejected`. Then send user-origin stop → assert recording ends normally.
 
 - [ ] T013 [P] [US3] Add `RecordingOrigin` string enum (`OriginManual`, `OriginAuto`, `OriginForced`), `RecordingSession` struct, and `StopRequest` struct to `internal/statemachine/statemachine.go`
-- [ ] T014 [US3] Add `session *RecordingSession`, `debounceDur time.Duration`, `logger *diaglog.Logger` fields to `StateMachine`; update `ForceStart()` to set `session` with `OriginManual` and a new `crypto/rand` session ID; update `StartRecording()` to set `session` with `OriginAuto` in `internal/statemachine/statemachine.go`
+- [ ] T014 [US3] Add `session *RecordingSession`, `debounceDur time.Duration`, `logger *diaglog.Logger` fields to `StateMachine`; add `SetLogger(l *diaglog.Logger)` and `SetDebounceDuration(d time.Duration)` setter methods; update `ForceStart()` to set `session` with `OriginManual` and a new `crypto/rand` session ID; update `StartRecording()` to set `session` with `OriginAuto` in `internal/statemachine/statemachine.go`
 - [ ] T015 [US3] Implement `StopRecording(req StopRequest) bool` — reject (log + return false) if `session.Origin == OriginManual` and `req.RequestOrigin != OriginManual`; apply debounce guard on session start; clear session and return true on allowed stop in `internal/statemachine/statemachine.go`
 - [ ] T016 [US3] Update all existing `StopRecording()` call sites in `cmd/memofy-core/main.go` to pass a `StopRequest` with appropriate `RequestOrigin`, `Reason`, and `Component`
 - [ ] T017 [P] [US3] Add `SessionOrigin() RecordingOrigin` and `SessionID() string` accessor methods to `StateMachine` in `internal/statemachine/statemachine.go`
-- [ ] T018 [P] [US3] Write `TestManualSessionBlocksAutoStop`, `TestManualSessionAllowsUserStop`, `TestDebounceRejectsEarlyStop`, `TestAutoSessionAllowsAutoStop`, `TestSessionIDGeneratedOnStart` in `internal/statemachine/statemachine_test.go`
+- [ ] T018 [P] [US3] Write `TestManualSessionBlocksAutoStop`, `TestManualSessionAllowsUserStop`, `TestDebounceRejectsAutoStopEarly` (auto-origin stop within debounce → rejected), `TestDebounceAllowsUserStopEarly` (manual-origin stop within debounce → allowed, per FR-008), `TestAutoSessionAllowsAutoStop`, `TestSessionIDGeneratedOnStart` in `internal/statemachine/statemachine_test.go`
 
 **Checkpoint**: US3 complete — manual recordings are fully protected from automated stops.
 
@@ -85,7 +85,7 @@
 
 **Independent Test**: Seed a temp log file with 10 NDJSON lines → run `memofy-core --export-diag` pointing at it → assert output file line 1 is valid `DiagBundle` JSON with correct `entry_count`, lines 2–11 match source lines exactly.
 
-- [ ] T019 [US4] Implement `DiagBundle` struct and `Export(logPath, dest string) (string, error)` (reads source log, prepends metadata line, writes `memofy-diag-<timestamp>.ndjson` to dest) in `internal/diaglog/export.go`
+- [ ] T019 [US4] Implement `DiagBundle` struct and `Export(logPath, dest string) (path string, lines int, err error)` (reads source log, counts lines, prepends metadata line, writes `memofy-diag-<timestamp>.ndjson` to dest; returns file path and line count) in `internal/diaglog/export.go`
 - [ ] T020 [US4] Add `--export-diag` flag detection at top of `main()` in `cmd/memofy-core/main.go`: read `MEMOFY_LOG_PATH`, call `diaglog.Export`, print path to stdout, exit with codes from `contracts/cli.md`
 - [ ] T021 [P] [US4] Write `TestExportWritesBundleHeader`, `TestExportContainsAllLines`, `TestExportMissingFile`, `TestExportCompletesUnder10s` in `internal/diaglog/export_test.go`
 
