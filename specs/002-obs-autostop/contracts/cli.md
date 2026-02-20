@@ -35,6 +35,8 @@ memofy-core --export-diag
 Wrote: /home/user/memofy-diag-20260220T134222.ndjson (4312 lines)
 ```
 
+> `Export()` returns `(path string, lines int, err error)`; the caller prints `Wrote: <path> (<lines> lines)`.
+
 **Example error (stderr)**:
 ```
 error: log file not found at /tmp/memofy-debug.log
