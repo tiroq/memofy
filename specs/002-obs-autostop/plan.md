@@ -178,10 +178,13 @@ Change `StopRecording()` signature to:
 func (sm *StateMachine) StopRecording(req StopRequest) bool
 // Returns true if stop was executed, false if rejected.
 // Rejection: session.Origin == OriginManual AND req.RequestOrigin != OriginManual → log + return false.
-// Debounce: session.Origin == OriginManual AND time.Since(session.StartedAt) < debounceDur → reject even if req.RequestOrigin == OriginManual (race guard).
+// Debounce (race guard): session.Origin == OriginManual
+//   AND time.Since(session.StartedAt) < debounceDur
+//   AND req.RequestOrigin != OriginManual → reject.
+// Rationale: debounce guard targets only automated signals that were
+// queued before the session lock took effect. A user clicking Stop
+// within the debounce window always succeeds (spec FR-008).
 ```
-
-Exception: `StopRequest{RequestOrigin: OriginManual, Reason: "user_stop"}` always passes.
 
 Change `ForceStart()`:
 - Sets `session = &RecordingSession{SessionID: newSessionID(), Origin: OriginManual, ...}`
@@ -202,7 +205,8 @@ All callers of `StopRecording` (in `cmd/memofy-core/main.go` and anywhere in `Pr
 **Tests**: `internal/statemachine/statemachine_test.go`
 - `TestManualSessionBlocksAutoStop`: ForceStart → StopRecording(auto origin) → assert returns false, recording still active.
 - `TestManualSessionAllowsUserStop`: ForceStart → StopRecording(manual origin, user_stop) → assert returns true.
-- `TestDebounceRejectsEarlyStop`: ForceStart → immediately StopRecording(manual, user_stop within debounce) → assert rejected.
+- `TestDebounceRejectsAutoStopEarly`: ForceStart → immediately StopRecording(**auto** origin within debounce window) → assert rejected.
+- `TestDebounceAllowsUserStopEarly`: ForceStart → immediately StopRecording(manual origin, user_stop within debounce) → assert returns true (debounce does NOT block user stops).
 - `TestAutoSessionAllowsAutoStop`: StartRecording(auto) → StopRecording(auto origin) → assert returns true.
 - `TestSessionIDGeneratedOnStart`: ForceStart → assert SessionID is 16 non-empty hex chars.
 
@@ -217,9 +221,9 @@ All callers of `StopRecording` (in `cmd/memofy-core/main.go` and anywhere in `Pr
 **New file: `internal/diaglog/export.go`**
 
 ```go
-func Export(logPath string, dest string) (string, error)
+func Export(logPath string, dest string) (path string, lines int, err error)
 // Reads logPath, prepends a DiagBundle metadata line, writes to dest/<timestamp>.ndjson.
-// Returns the path of the written file.
+// Returns the written file path and the number of log lines included.
 ```
 
 `DiagBundle` is assembled from:
@@ -234,9 +238,9 @@ func Export(logPath string, dest string) (string, error)
 if len(os.Args) > 1 && os.Args[1] == "--export-diag" {
     path := os.Getenv("MEMOFY_LOG_PATH")
     if path == "" { path = "/tmp/memofy-debug.log" }
-    out, err := diaglog.Export(path, ".")
+    out, n, err := diaglog.Export(path, ".")
     if err != nil { fmt.Fprintln(os.Stderr, "error:", err); os.Exit(exitCodeFor(err)) }
-    fmt.Println("Wrote:", out)
+    fmt.Printf("Wrote: %s (%d lines)\n", out, n)
     os.Exit(0)
 }
 ```
