@@ -26,6 +26,8 @@ const (
 
 A stop signal from origin X is rejected if the active session was started by an origin with higher priority. The comparison is done by the authority check in `StopRecording`.
 
+> **Note on `OriginForced` vs FR-007 "WebSocket sync"**: FR-007 names three tiers: manual, auto-detection, and WebSocket sync. WebSocket sync is addressed architecturally by FR-009 (no reconnect resync is ever issued), so it requires no distinct origin constant. `OriginForced` covers the programmatic / test-harness path — it carries the same authority as `OriginAuto`. It is **not** a production call path; any production stop must use `OriginManual` or `OriginAuto`. Using `OriginForced` in production code is a contract violation.
+
 ---
 
 ### 1.2 `RecordingSession` — Active Session Snapshot
