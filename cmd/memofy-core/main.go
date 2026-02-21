@@ -6,12 +6,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/tiroq/memofy/internal/config"
 	"github.com/tiroq/memofy/internal/detector"
+	"github.com/tiroq/memofy/internal/diaglog"
 	"github.com/tiroq/memofy/internal/fileutil"
 	"github.com/tiroq/memofy/internal/ipc"
 	"github.com/tiroq/memofy/internal/obsws"
@@ -43,6 +45,26 @@ var (
 )
 
 func main() {
+	// T020: --export-diag subcommand: read log, write bundle, exit (FR-006).
+	if len(os.Args) > 1 && os.Args[1] == "--export-diag" {
+		logPath := os.Getenv("MEMOFY_LOG_PATH")
+		if logPath == "" {
+			logPath = "/tmp/memofy-debug.log"
+		}
+		diaglog.Version = Version
+		path, n, err := diaglog.Export(logPath, ".")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			if os.IsNotExist(err) {
+				fmt.Fprintln(os.Stderr, "hint: run with MEMOFY_DEBUG_RECORDING=true to enable logging")
+				os.Exit(1)
+			}
+			os.Exit(2)
+		}
+		fmt.Printf("Wrote: %s (%d lines)\n", path, n)
+		os.Exit(0)
+	}
+
 	// Recover from any panics and log them
 	defer func() {
 		if r := recover(); r != nil {
@@ -182,7 +204,31 @@ func main() {
 	stateMachine := statemachine.NewStateMachine(cfg)
 	outLog.Printf("[STARTUP] State machine initialized in %s mode", stateMachine.CurrentMode())
 
-	// Initialize status directory
+	// T022: init diaglog (FR-001/FR-004/FR-005)
+	logPath := os.Getenv("MEMOFY_LOG_PATH")
+	if logPath == "" {
+		logPath = "/tmp/memofy-debug.log"
+	}
+	diagLogger, diagErr := diaglog.New(logPath)
+	if diagErr != nil {
+		errLog.Printf("[STARTUP] WARNING: could not open diagnostic log at %s: %v (continuing)", logPath, diagErr)
+		diagLogger = diaglog.NewNoOp()
+	}
+	defer diagLogger.Close()
+	diaglog.Version = Version
+
+	// Wire debounce from env var (FR-008)
+	debounceDur := 5 * time.Second
+	if ms := os.Getenv("MEMOFY_MANUAL_DEBOUNCE_MS"); ms != "" {
+		if msInt, err := strconv.Atoi(ms); err == nil && msInt > 0 {
+			debounceDur = time.Duration(msInt) * time.Millisecond
+		}
+	}
+	stateMachine.SetLogger(diagLogger)
+	stateMachine.SetDebounceDuration(debounceDur)
+	obsClient.SetLogger(diagLogger) // T022: wire logger into OBS client (FR-001)
+
+	// Initialize OBS WebSocket client
 	outLog.Println("[STARTUP] Creating status directory...")
 	statusDir := filepath.Join(os.Getenv("HOME"), ".cache", "memofy")
 	if err := os.MkdirAll(statusDir, 0755); err != nil {
@@ -237,7 +283,11 @@ func main() {
 				currentMeetingApp = app
 				handleStartRecording(stateMachine, obsClient, app, detectionState.WindowTitle)
 			} else if shouldStop {
-				handleStopRecording(stateMachine, obsClient)
+				handleStopRecording(stateMachine, obsClient, statemachine.StopRequest{
+					RequestOrigin: statemachine.OriginAuto,
+					Reason:        "auto_detection_stop",
+					Component:     "auto-detector",
+				})
 			}
 
 			// Write status update
@@ -252,7 +302,11 @@ func main() {
 			// Stop recording if active
 			if stateMachine.IsRecording() {
 				outLog.Println("[SHUTDOWN] Recording is active - stopping before shutdown...")
-				handleStopRecording(stateMachine, obsClient)
+				handleStopRecording(stateMachine, obsClient, statemachine.StopRequest{
+					RequestOrigin: statemachine.OriginManual,
+					Reason:        "daemon_shutdown",
+					Component:     "memofy-core",
+				})
 			}
 
 			outLog.Println("[SHUTDOWN] Shutting down gracefully")
@@ -290,18 +344,28 @@ func handleStartRecording(sm *statemachine.StateMachine, obs *obsws.Client, app 
 	outLog.Printf("Recording started successfully (app=%s, streak=%d, title=%q)", app, sm.GetDetectionStreak(), windowTitle)
 }
 
-// handleStopRecording stops OBS recording and renames to proper format
-func handleStopRecording(sm *statemachine.StateMachine, obs *obsws.Client) {
+// handleStopRecording stops OBS recording when the authority check passes,
+// then renames the output file to the proper format.
+func handleStopRecording(sm *statemachine.StateMachine, obs *obsws.Client, req statemachine.StopRequest) {
+	if !sm.IsRecording() {
+		return
+	}
 	duration := sm.RecordingDuration()
-	outLog.Printf("Stopping recording after %s (absence_streak=%d)", duration, sm.GetAbsenceStreak())
+	outLog.Printf("Stopping recording after %s (absence_streak=%d, origin=%s, reason=%s)",
+		duration, sm.GetAbsenceStreak(), req.RequestOrigin, req.Reason)
 
-	outputPath, err := obs.StopRecord()
+	// Authority check: StopRecording returns false if rejected (FR-007/FR-008).
+	if !sm.StopRecording(req) {
+		errLog.Printf("Stop request rejected (origin=%s): manual session protection active", req.RequestOrigin)
+		return
+	}
+
+	outputPath, err := obs.StopRecord(req.Reason)
 	if err != nil {
 		errLog.Printf("Failed to stop recording: %v", err)
 		return
 	}
 
-	sm.StopRecording()
 	outLog.Printf("Recording stopped successfully: %s", outputPath)
 
 	// Rename file to proper format: YYYY-MM-DD_HHMM_Application_Title.mp4
@@ -377,6 +441,9 @@ func writeStatus(sm *statemachine.StateMachine, detection *detector.DetectionSta
 		StopStreak:       sm.GetAbsenceStreak(),
 		Timestamp:        time.Now(),
 		OBSConnected:     obs.IsConnected(),
+		// T023: populate session fields (FR-012)
+		RecordingOrigin: string(sm.SessionOrigin()),
+		SessionID:       sm.SessionID(),
 	}
 
 	return ipc.WriteStatus(&status)
@@ -523,11 +590,11 @@ func handleCommand(cmd ipc.Command, sm *statemachine.StateMachine, obs *obsws.Cl
 		handleStartRecording(sm, obs, detector.AppNone, "Manual")
 
 	case ipc.CmdStop:
-		if err := sm.ForceStop(); err != nil {
-			errLog.Printf("ForceStop failed: %v", err)
-			return
-		}
-		handleStopRecording(sm, obs)
+		handleStopRecording(sm, obs, statemachine.StopRequest{
+			RequestOrigin: statemachine.OriginManual,
+			Reason:        "user_stop",
+			Component:     "memofy-core",
+		})
 
 	case ipc.CmdAuto:
 		sm.SetMode(ipc.ModeAuto)
@@ -556,11 +623,11 @@ func handleCommand(cmd ipc.Command, sm *statemachine.StateMachine, obs *obsws.Cl
 	case ipc.CmdToggle:
 		// Toggle recording state: if recording, stop; else start
 		if sm.IsRecording() {
-			if err := sm.ForceStop(); err != nil {
-				errLog.Printf("ForceStop failed: %v", err)
-				return
-			}
-			handleStopRecording(sm, obs)
+			handleStopRecording(sm, obs, statemachine.StopRequest{
+				RequestOrigin: statemachine.OriginManual,
+				Reason:        "user_stop",
+				Component:     "memofy-core",
+			})
 		} else {
 			if err := sm.ForceStart(detector.AppNone); err != nil {
 				errLog.Printf("ForceStart failed: %v", err)
