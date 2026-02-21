@@ -137,7 +137,7 @@ func TestProcessDetection_StopThreshold(t *testing.T) {
 					} else if i != tt.wantStopAt {
 						t.Errorf("stopped at index %d, want %d", i, tt.wantStopAt)
 					}
-					sm.StopRecording()
+					sm.StopRecording(StopRequest{RequestOrigin: OriginManual, Reason: "test_stop", Component: "test"})
 				}
 			}
 
@@ -286,7 +286,7 @@ func TestRecordingDuration(t *testing.T) {
 	}
 
 	// Stop recording
-	sm.StopRecording()
+	sm.StopRecording(StopRequest{RequestOrigin: OriginManual, Reason: "test_stop", Component: "test"})
 	if d := sm.RecordingDuration(); d != 0 {
 		t.Errorf("duration after stop = %v, want 0", d)
 	}
@@ -337,5 +337,150 @@ func TestStreakTracking(t *testing.T) {
 		if sm.GetDetectionStreak() != 0 {
 			t.Errorf("detection streak = %d, want 0", sm.GetDetectionStreak())
 		}
+	}
+}
+
+// ── T018: Session authority & debounce tests ──────────────────────────────────
+
+// TestManualSessionBlocksAutoStop verifies FR-007: a Manual-origin session
+// cannot be stopped by an Auto-origin request.
+func TestManualSessionBlocksAutoStop(t *testing.T) {
+	cfg := &config.DetectionConfig{StartThreshold: 1, StopThreshold: 1}
+	sm := NewStateMachine(cfg)
+	sm.SetDebounceDuration(0) // disable debounce for this test
+
+	if err := sm.ForceStart(detector.AppZoom); err != nil {
+		t.Fatalf("ForceStart failed: %v", err)
+	}
+
+	stopped := sm.StopRecording(StopRequest{
+		RequestOrigin: OriginAuto,
+		Reason:        "auto_detection_stop",
+		Component:     "auto-detector",
+	})
+
+	if stopped {
+		t.Error("expected auto stop to be rejected for manual session, but it succeeded")
+	}
+	if !sm.IsRecording() {
+		t.Error("expected recording to still be active after rejected auto stop")
+	}
+}
+
+// TestManualSessionAllowsUserStop verifies that a Manual-origin stop request
+// succeeds even on a Manual-origin session.
+func TestManualSessionAllowsUserStop(t *testing.T) {
+	cfg := &config.DetectionConfig{StartThreshold: 1, StopThreshold: 1}
+	sm := NewStateMachine(cfg)
+	sm.SetDebounceDuration(0) // disable debounce
+
+	if err := sm.ForceStart(detector.AppZoom); err != nil {
+		t.Fatalf("ForceStart failed: %v", err)
+	}
+
+	stopped := sm.StopRecording(StopRequest{
+		RequestOrigin: OriginManual,
+		Reason:        "user_stop",
+		Component:     "memofy-core",
+	})
+
+	if !stopped {
+		t.Error("expected manual stop to succeed on manual session")
+	}
+	if sm.IsRecording() {
+		t.Error("expected recording to have stopped")
+	}
+}
+
+// TestDebounceRejectsAutoStopEarly verifies FR-008: auto-origin stops within
+// the debounce window are rejected.
+func TestDebounceRejectsAutoStopEarly(t *testing.T) {
+	cfg := &config.DetectionConfig{StartThreshold: 1, StopThreshold: 1}
+	sm := NewStateMachine(cfg)
+	sm.SetDebounceDuration(30 * time.Second) // very long debounce
+
+	sm.StartRecording(detector.AppZoom)
+
+	stopped := sm.StopRecording(StopRequest{
+		RequestOrigin: OriginAuto,
+		Reason:        "auto_detection_stop",
+		Component:     "auto-detector",
+	})
+
+	if stopped {
+		t.Error("expected auto stop within debounce window to be rejected")
+	}
+	if !sm.IsRecording() {
+		t.Error("expected recording to remain active after debounce rejection")
+	}
+}
+
+// TestDebounceAllowsUserStopEarly verifies that Manual-origin stops bypass
+// the debounce guard (FR-008: "does NOT block manual-origin stops").
+func TestDebounceAllowsUserStopEarly(t *testing.T) {
+	cfg := &config.DetectionConfig{StartThreshold: 1, StopThreshold: 1}
+	sm := NewStateMachine(cfg)
+	sm.SetDebounceDuration(30 * time.Second) // very long debounce
+
+	sm.StartRecording(detector.AppZoom)
+
+	stopped := sm.StopRecording(StopRequest{
+		RequestOrigin: OriginManual,
+		Reason:        "user_stop",
+		Component:     "memofy-core",
+	})
+
+	if !stopped {
+		t.Error("expected manual stop to bypass debounce guard")
+	}
+	if sm.IsRecording() {
+		t.Error("expected recording to have stopped after manual stop")
+	}
+}
+
+// TestAutoSessionAllowsAutoStop verifies that Auto-origin stops succeed on an
+// Auto-origin session once the debounce window has elapsed.
+func TestAutoSessionAllowsAutoStop(t *testing.T) {
+	cfg := &config.DetectionConfig{StartThreshold: 1, StopThreshold: 1}
+	sm := NewStateMachine(cfg)
+	sm.SetDebounceDuration(0) // no debounce
+
+	sm.StartRecording(detector.AppZoom)
+
+	stopped := sm.StopRecording(StopRequest{
+		RequestOrigin: OriginAuto,
+		Reason:        "auto_detection_stop",
+		Component:     "auto-detector",
+	})
+
+	if !stopped {
+		t.Error("expected auto stop to succeed on auto session with zero debounce")
+	}
+	if sm.IsRecording() {
+		t.Error("expected recording to have stopped")
+	}
+}
+
+// TestSessionIDGeneratedOnStart verifies that a non-empty session ID is
+// assigned when ForceStart is called.
+func TestSessionIDGeneratedOnStart(t *testing.T) {
+	cfg := &config.DetectionConfig{StartThreshold: 1, StopThreshold: 1}
+	sm := NewStateMachine(cfg)
+
+	if err := sm.ForceStart(detector.AppZoom); err != nil {
+		t.Fatalf("ForceStart failed: %v", err)
+	}
+
+	sid := sm.SessionID()
+	if sid == "" {
+		t.Error("expected non-empty session ID after ForceStart, got empty string")
+	}
+	if len(sid) != 16 {
+		t.Errorf("expected 16-character hex session ID, got %q (len %d)", sid, len(sid))
+	}
+
+	origin := sm.SessionOrigin()
+	if origin != OriginManual {
+		t.Errorf("expected session origin %q, got %q", OriginManual, origin)
 	}
 }
