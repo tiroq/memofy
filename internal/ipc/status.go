@@ -19,18 +19,20 @@ const (
 
 // StatusSnapshot represents the complete system state at a point in time
 type StatusSnapshot struct {
-	Mode             OperatingMode `json:"mode"`               // Current operating mode
-	DetectionState   interface{}   `json:"detection_state"`    // Raw detection state (defined in detector package)
-	RecordingState   interface{}   `json:"recording_state"`    // Actual recording state (defined in obsws package)
-	TeamsDetected    bool          `json:"teams_detected"`     // Teams meeting active
-	ZoomDetected     bool          `json:"zoom_detected"`      // Zoom meeting active
-	GoogleMeetActive bool          `json:"google_meet_active"` // Google Meet meeting active
-	StartStreak      int           `json:"start_streak"`       // Consecutive detections
-	StopStreak       int           `json:"stop_streak"`        // Consecutive non-detections
-	LastAction       string        `json:"last_action"`        // Last action taken
-	LastError        string        `json:"last_error"`         // Last error message
-	Timestamp        time.Time     `json:"timestamp"`          // Snapshot time
-	OBSConnected     bool          `json:"obs_connected"`      // OBS connection status
+	Mode             OperatingMode `json:"mode"`                       // Current operating mode
+	DetectionState   interface{}   `json:"detection_state"`            // Raw detection state (defined in detector package)
+	RecordingState   interface{}   `json:"recording_state"`            // Actual recording state (defined in obsws package)
+	TeamsDetected    bool          `json:"teams_detected"`             // Teams meeting active
+	ZoomDetected     bool          `json:"zoom_detected"`              // Zoom meeting active
+	GoogleMeetActive bool          `json:"google_meet_active"`         // Google Meet meeting active
+	StartStreak      int           `json:"start_streak"`               // Consecutive detections
+	StopStreak       int           `json:"stop_streak"`                // Consecutive non-detections
+	LastAction       string        `json:"last_action"`                // Last action taken
+	LastError        string        `json:"last_error"`                 // Last error message
+	Timestamp        time.Time     `json:"timestamp"`                  // Snapshot time
+	OBSConnected     bool          `json:"obs_connected"`              // OBS connection status
+	RecordingOrigin  string        `json:"recording_origin,omitempty"` // origin of active session: "manual", "auto", "forced"
+	SessionID        string        `json:"session_id,omitempty"`       // unique ID for active recording session
 }
 
 // WriteStatus persists StatusSnapshot to ~/.cache/memofy/status.json using atomic write

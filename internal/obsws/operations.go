@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/tiroq/memofy/internal/diaglog"
 )
 
 // GetRecordStatus queries OBS for current recording status
@@ -68,8 +70,14 @@ func (c *Client) StartRecord(filename string) error {
 	return nil
 }
 
-// StopRecord stops the current recording
-func (c *Client) StopRecord() (string, error) {
+// StopRecord stops the current recording. reason is a machine-readable reason
+// code (e.g. "user_stop", "auto_detection_stop") logged via FR-003.
+func (c *Client) StopRecord(reason string) (string, error) {
+	// Log the stop command with reason before sending (FR-003).
+	c.log(diaglog.LogEntry{
+		Event:  diaglog.EventRecordingStop,
+		Reason: reason,
+	})
 	resp, err := c.sendRequest("StopRecord", nil)
 	if err != nil {
 		return "", err
