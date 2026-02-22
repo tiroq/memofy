@@ -736,7 +736,8 @@ func TestLogStopRecordEmitsReason(t *testing.T) {
 	entries := readLogEntries(t, logPath)
 	found := false
 	for _, e := range entries {
-		if e["event"] == "ws_send" {
+		// StopRecord logs EventRecordingStop ("recording_stop") with the reason field.
+		if e["event"] == "recording_stop" {
 			found = true
 			if e["reason"] != "user_stop" {
 				t.Errorf("log entry reason = %q, want %q", e["reason"], "user_stop")
@@ -745,7 +746,7 @@ func TestLogStopRecordEmitsReason(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("expected a ws_send log entry for StopRecord, found none")
+		t.Error("expected a recording_stop log entry for StopRecord, found none")
 	}
 }
 
@@ -771,9 +772,11 @@ func TestLogReconnectAttempt(t *testing.T) {
 		t.Fatalf("Connect failed: %v", err)
 	}
 
-	// Force disconnect to trigger reconnect logic
+	// Force disconnect to trigger reconnect logic.
+	// Allow enough time for the readMessages goroutine to detect the TCP close,
+	// call disconnect(), and write the log entry before we read it back.
 	mock.Close()
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 
 	logger.Close()
 
