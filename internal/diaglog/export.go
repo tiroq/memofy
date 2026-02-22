@@ -40,7 +40,7 @@ func Export(logPath, dest string) (path string, lines int, err error) {
 	// Buffer all lines (log is capped at 10 MB so this is safe).
 	var rawLines [][]byte
 	scanner := bufio.NewScanner(src)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 10*1024*1024), 10*1024*1024)
 	for scanner.Scan() {
 		line := make([]byte, len(scanner.Bytes()))
 		copy(line, scanner.Bytes())

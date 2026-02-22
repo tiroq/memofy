@@ -354,8 +354,9 @@ func handleStopRecording(sm *statemachine.StateMachine, obs *obsws.Client, req s
 	outLog.Printf("Stopping recording after %s (absence_streak=%d, origin=%s, reason=%s)",
 		duration, sm.GetAbsenceStreak(), req.RequestOrigin, req.Reason)
 
-	// Authority check: StopRecording returns false if rejected (FR-007/FR-008).
-	if !sm.StopRecording(req) {
+	// Authority check without mutating state (FR-007/FR-008); state is only
+	// committed after OBS confirms the stop succeeded.
+	if !sm.CanStop(req) {
 		errLog.Printf("Stop request rejected (origin=%s): manual session protection active", req.RequestOrigin)
 		return
 	}
@@ -365,6 +366,9 @@ func handleStopRecording(sm *statemachine.StateMachine, obs *obsws.Client, req s
 		errLog.Printf("Failed to stop recording: %v", err)
 		return
 	}
+
+	// Commit state change only after OBS confirmed the stop (FR-007/FR-008).
+	sm.StopRecording(req)
 
 	outLog.Printf("Recording stopped successfully: %s", outputPath)
 

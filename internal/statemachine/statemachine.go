@@ -172,6 +172,21 @@ func (sm *StateMachine) StartRecording(app detector.DetectedApp) {
 	}
 }
 
+// CanStop reports whether req would be accepted by the authority hierarchy and
+// debounce guard without mutating any state. Callers can use this to perform
+// the authority check before issuing the OBS StopRecord call (FR-007/FR-008).
+func (sm *StateMachine) CanStop(req StopRequest) bool {
+	if sm.session != nil && sm.session.Origin == OriginManual {
+		if priorityOf(req.RequestOrigin) < priorityOf(OriginManual) {
+			return false
+		}
+		if req.RequestOrigin != OriginManual && time.Since(sm.session.StartedAt) < sm.debounceDur {
+			return false
+		}
+	}
+	return true
+}
+
 // StopRecording implements the authority hierarchy (T015 / FR-007 / FR-008).
 // Returns true if the stop was executed, false if it was rejected.
 func (sm *StateMachine) StopRecording(req StopRequest) bool {
@@ -195,10 +210,10 @@ func (sm *StateMachine) StopRecording(req StopRequest) bool {
 		}
 	}
 
-	// Debounce guard: reject auto-origin stops in the race window (FR-008).
-	// Applies to all session origins; only manual-request stops bypass the guard.
+	// Debounce guard: for manual-origin sessions, reject non-manual stops within
+	// the race window (FR-008). Auto sessions are not protected by this guard.
 	// NOTE: explicit user stops always succeed immediately.
-	if sm.session != nil && req.RequestOrigin != OriginManual && time.Since(sm.session.StartedAt) < sm.debounceDur {
+	if sm.session != nil && sm.session.Origin == OriginManual && req.RequestOrigin != OriginManual && time.Since(sm.session.StartedAt) < sm.debounceDur {
 		if sm.logger != nil {
 			sm.logger.Log(diaglog.LogEntry{
 				Component: diaglog.ComponentStateMachine,

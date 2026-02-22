@@ -736,17 +736,21 @@ func TestLogStopRecordEmitsReason(t *testing.T) {
 	entries := readLogEntries(t, logPath)
 	found := false
 	for _, e := range entries {
-		// StopRecord logs EventRecordingStop ("recording_stop") with the reason field.
-		if e["event"] == "recording_stop" {
+		// StopRecord attaches reason to the ws_send log entry (FR-003).
+		payload, ok := e["payload"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if e["event"] == "ws_send" && payload["request_type"] == "StopRecord" {
 			found = true
-			if e["reason"] != "user_stop" {
-				t.Errorf("log entry reason = %q, want %q", e["reason"], "user_stop")
+			if payload["reason"] != "user_stop" {
+				t.Errorf("ws_send reason = %q, want %q", payload["reason"], "user_stop")
 			}
 			break
 		}
 	}
 	if !found {
-		t.Error("expected a recording_stop log entry for StopRecord, found none")
+		t.Error("expected a ws_send log entry for StopRecord with reason, found none")
 	}
 }
 

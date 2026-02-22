@@ -392,14 +392,16 @@ func TestManualSessionAllowsUserStop(t *testing.T) {
 	}
 }
 
-// TestDebounceRejectsAutoStopEarly verifies FR-008: auto-origin stops within
-// the debounce window are rejected.
+// TestDebounceRejectsAutoStopEarly verifies FR-008: for a manually started
+// session, auto-origin stops within the debounce window are rejected.
 func TestDebounceRejectsAutoStopEarly(t *testing.T) {
 	cfg := &config.DetectionConfig{StartThreshold: 1, StopThreshold: 1}
 	sm := NewStateMachine(cfg)
 	sm.SetDebounceDuration(30 * time.Second) // very long debounce
 
-	sm.StartRecording(detector.AppZoom)
+	if err := sm.ForceStart(detector.AppZoom); err != nil {
+		t.Fatalf("ForceStart failed: %v", err)
+	}
 
 	stopped := sm.StopRecording(StopRequest{
 		RequestOrigin: OriginAuto,
