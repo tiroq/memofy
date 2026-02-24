@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/tiroq/memofy/internal/diaglog"
 )
 
 // RecordingState represents OBS recording status
@@ -27,15 +28,20 @@ type RecordingState struct {
 
 // Client represents an OBS WebSocket v5 client
 type Client struct {
-	url        string
-	password   string
-	conn       *websocket.Conn
-	mu         sync.RWMutex
-	connected  bool
-	identified bool
-	requestID  int
-	responses  map[int]chan *Response
-	responseMu sync.RWMutex
+	url         string
+	password    string
+	conn        *websocket.Conn
+	mu          sync.RWMutex
+	connected   bool
+	identified  bool
+	requestID   int
+	requestIDMu sync.Mutex // T024: guards requestID increment
+	responses   map[int]chan *Response
+	responseMu  sync.RWMutex
+
+	// Structured diagnostic logger (FR-001, FR-002)
+	logger   *diaglog.Logger
+	loggerMu sync.RWMutex
 
 	// Event handlers
 	onRecordStateChanged func(recording bool)
@@ -211,6 +217,10 @@ func (c *Client) authenticate(hello *HelloData) error {
 		c.identified = true
 		c.mu.Unlock()
 		c.updateOBSStatus("connected", hello.OBSWebSocketVersion)
+		c.log(diaglog.LogEntry{
+			Event:   diaglog.EventWSConnect,
+			Payload: map[string]interface{}{"obs_version": hello.OBSWebSocketVersion},
+		})
 		return nil
 	case <-time.After(10 * time.Second):
 		c.disconnect()
@@ -244,10 +254,27 @@ func (c *Client) readMessages() {
 		}
 
 		if err := conn.ReadJSON(&msg); err != nil {
+			// Detect close code 4009 (multi-client / session invalidated) — FR-010
+			var closeErr *websocket.CloseError
+			if errors.As(err, &closeErr) && closeErr.Code == 4009 {
+				c.log(diaglog.LogEntry{
+					Event:   diaglog.EventMultiClientWarning,
+					Payload: map[string]interface{}{"close_code": 4009, "text": closeErr.Text},
+				})
+			}
 			if c.onDisconnected != nil {
 				c.onDisconnected()
 			}
 			return
+		}
+
+		// Log every received WS message (FR-001)
+		var rawMsg interface{}
+		if jerr := json.Unmarshal(msg.D, &rawMsg); jerr == nil {
+			c.log(diaglog.LogEntry{
+				Event:   diaglog.EventWSRecv,
+				Payload: rawMsg,
+			})
 		}
 
 		switch msg.Op {
@@ -339,8 +366,10 @@ func (c *Client) sendRequest(requestType string, requestData interface{}) (*Resp
 	}
 	c.mu.RUnlock()
 
+	c.requestIDMu.Lock()
 	c.requestID++
 	id := c.requestID
+	c.requestIDMu.Unlock()
 	requestID := fmt.Sprintf("%d", id)
 
 	req := Request{
@@ -353,6 +382,19 @@ func (c *Client) sendRequest(requestType string, requestData interface{}) (*Resp
 		Op: OpRequest,
 	}
 	msg.D, _ = json.Marshal(req)
+
+	// Log every outgoing WS request (FR-001); merge requestData fields into
+	// the payload so that per-request metadata (e.g. stop reason) is captured.
+	logPayload := map[string]interface{}{"request_type": requestType, "request_id": requestID}
+	if m, ok := requestData.(map[string]interface{}); ok {
+		for k, v := range m {
+			logPayload[k] = v
+		}
+	}
+	c.log(diaglog.LogEntry{
+		Event:   diaglog.EventWSSend,
+		Payload: logPayload,
+	})
 
 	// Create response channel
 	respChan := make(chan *Response, 1)
@@ -401,6 +443,10 @@ func (c *Client) disconnect() {
 	defer c.mu.Unlock()
 
 	if c.conn != nil {
+		c.log(diaglog.LogEntry{
+			Event:   diaglog.EventWSDisconnect,
+			Payload: map[string]interface{}{"url": c.url},
+		})
 		if err := c.conn.Close(); err != nil {
 			log.Printf("Warning: failed to close connection: %v", err)
 		}
@@ -414,6 +460,8 @@ func (c *Client) disconnect() {
 
 // reconnect attempts to reconnect with exponential backoff and jitter
 func (c *Client) reconnect() {
+	// FR-009: intentional — do not add GetRecordStatus or any recording command here.
+	// ReconnecTion must never automatically start or stop recording.
 	delay := c.reconnectDelay
 	attempt := 0
 	for {
@@ -422,12 +470,28 @@ func (c *Client) reconnect() {
 			return
 		case <-time.After(delay):
 			attempt++
+			c.log(diaglog.LogEntry{
+				Event:     diaglog.EventWSReconnectAttempt,
+				Component: diaglog.ComponentReconnect,
+				Payload:   map[string]interface{}{"attempt": attempt, "delay_ms": delay.Milliseconds()},
+			})
 			log.Printf("[RECONNECT] Attempt %d: Retrying connection in %d seconds...", attempt, delay/time.Second)
 			if err := c.Connect(); err == nil {
+				c.log(diaglog.LogEntry{
+					Event:     diaglog.EventWSReconnectSuccess,
+					Component: diaglog.ComponentReconnect,
+					Payload:   map[string]interface{}{"attempt": attempt},
+				})
 				log.Printf("[RECONNECT] Successfully reconnected on attempt %d", attempt)
-				return // Successfully reconnected
+				return
+			} else {
+				c.log(diaglog.LogEntry{
+					Event:     diaglog.EventWSReconnectFailed,
+					Component: diaglog.ComponentReconnect,
+					Payload:   map[string]interface{}{"attempt": attempt, "error": err.Error()},
+				})
+				log.Printf("[RECONNECT] Attempt %d failed, backing off...", attempt)
 			}
-			log.Printf("[RECONNECT] Attempt %d failed, backing off...", attempt)
 
 			// Exponential backoff with jitter to avoid thundering herd
 			delay = delay * 2
@@ -463,6 +527,29 @@ func (c *Client) Disconnect() {
 	c.reconnectEnabled = false
 	close(c.stopChan)
 	c.disconnect()
+}
+
+// SetLogger injects a diaglog.Logger. Safe to call any time before or after
+// Connect. Passing nil is a no-op (disables structured logging).
+func (c *Client) SetLogger(l *diaglog.Logger) {
+	c.loggerMu.Lock()
+	c.logger = l
+	c.loggerMu.Unlock()
+}
+
+// log emits a LogEntry when a logger is set. Component defaults to
+// ComponentOBSClient when left empty.
+func (c *Client) log(entry diaglog.LogEntry) {
+	c.loggerMu.RLock()
+	l := c.logger
+	c.loggerMu.RUnlock()
+	if l == nil {
+		return
+	}
+	if entry.Component == "" {
+		entry.Component = diaglog.ComponentOBSClient
+	}
+	l.Log(entry)
 }
 
 // SetReconnectEnabled enables/disables automatic reconnection

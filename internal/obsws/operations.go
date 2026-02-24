@@ -68,9 +68,14 @@ func (c *Client) StartRecord(filename string) error {
 	return nil
 }
 
-// StopRecord stops the current recording
-func (c *Client) StopRecord() (string, error) {
-	resp, err := c.sendRequest("StopRecord", nil)
+// StopRecord stops the current recording. reason is a machine-readable reason
+// code (e.g. "user_stop", "auto_detection_stop") logged via FR-003 in the
+// ws_send entry for the StopRecord request.
+func (c *Client) StopRecord(reason string) (string, error) {
+	// Pass reason as request data so it is merged into the ws_send log entry (FR-003).
+	resp, err := c.sendRequest("StopRecord", map[string]interface{}{
+		"reason": reason,
+	})
 	if err != nil {
 		return "", err
 	}
