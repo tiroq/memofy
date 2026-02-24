@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,6 +29,11 @@ type mockOBSServer struct {
 	recordPath     string
 	eventHandlers  map[string]func(*websocket.Conn)
 	failureMode    string // "code204", "code203", or ""
+
+	// Track active WebSocket connections so Close() can forcibly close them.
+	// http.Server.Close() does not close hijacked (WebSocket) connections.
+	connMu  sync.Mutex
+	conns   []*websocket.Conn
 }
 
 func newMockOBSServer() *mockOBSServer {
@@ -42,8 +48,22 @@ func newMockOBSServer() *mockOBSServer {
 		if err != nil {
 			return
 		}
+
+		// Register the connection so Close() can terminate it.
+		mock.connMu.Lock()
+		mock.conns = append(mock.conns, conn)
+		mock.connMu.Unlock()
+
 		defer func() {
 			_ = conn.Close() // Ignore close errors in test cleanup
+			mock.connMu.Lock()
+			for i, c := range mock.conns {
+				if c == conn {
+					mock.conns = append(mock.conns[:i], mock.conns[i+1:]...)
+					break
+				}
+			}
+			mock.connMu.Unlock()
 		}()
 
 		mock.handleConnection(conn)
@@ -208,6 +228,14 @@ func (m *mockOBSServer) URL() string {
 }
 
 func (m *mockOBSServer) Close() {
+	// Forcibly close all active WebSocket connections first. http.Server.Close()
+	// does not close hijacked connections, so without this the client's
+	// ReadJSON never unblocks and disconnect() is never called.
+	m.connMu.Lock()
+	for _, c := range m.conns {
+		_ = c.Close()
+	}
+	m.connMu.Unlock()
 	m.server.Close()
 }
 
