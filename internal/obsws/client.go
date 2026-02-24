@@ -383,10 +383,17 @@ func (c *Client) sendRequest(requestType string, requestData interface{}) (*Resp
 	}
 	msg.D, _ = json.Marshal(req)
 
-	// Log every outgoing WS request (FR-001)
+	// Log every outgoing WS request (FR-001); merge requestData fields into
+	// the payload so that per-request metadata (e.g. stop reason) is captured.
+	logPayload := map[string]interface{}{"request_type": requestType, "request_id": requestID}
+	if m, ok := requestData.(map[string]interface{}); ok {
+		for k, v := range m {
+			logPayload[k] = v
+		}
+	}
 	c.log(diaglog.LogEntry{
 		Event:   diaglog.EventWSSend,
-		Payload: map[string]interface{}{"request_type": requestType, "request_id": requestID},
+		Payload: logPayload,
 	})
 
 	// Create response channel
