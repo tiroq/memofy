@@ -32,8 +32,8 @@ type mockOBSServer struct {
 
 	// Track active WebSocket connections so Close() can forcibly close them.
 	// http.Server.Close() does not close hijacked (WebSocket) connections.
-	connMu  sync.Mutex
-	conns   []*websocket.Conn
+	connMu sync.Mutex
+	conns  []*websocket.Conn
 }
 
 func newMockOBSServer() *mockOBSServer {
