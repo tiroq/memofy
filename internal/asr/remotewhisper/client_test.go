@@ -38,7 +38,7 @@ func createTempAudio(t *testing.T) string {
 		t.Fatalf("create temp audio: %v", err)
 	}
 	_, _ = f.WriteString("fake-audio-data")
-	f.Close()
+	_ = f.Close()
 	return f.Name()
 }
 
@@ -89,13 +89,13 @@ func TestTranscribeFile_Success(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected file field: %v", err)
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		if header.Filename == "" {
 			t.Error("expected non-empty filename")
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, validTranscribeResponse())
+		_, _ = fmt.Fprint(w, validTranscribeResponse())
 	}))
 	defer ts.Close()
 
@@ -153,13 +153,13 @@ func TestTranscribeFile_RetryOn500(t *testing.T) {
 			// Drain the request body to avoid broken pipe.
 			_, _ = io.ReadAll(r.Body)
 			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprint(w, `{"error": "temporary failure"}`)
+			_, _ = fmt.Fprint(w, `{"error": "temporary failure"}`)
 			return
 		}
 		// Drain body before responding.
 		_, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, validTranscribeResponse())
+		_, _ = fmt.Fprint(w, validTranscribeResponse())
 	}))
 	defer ts.Close()
 
@@ -191,7 +191,7 @@ func TestTranscribeFile_Timeout(t *testing.T) {
 		_, _ = io.ReadAll(r.Body)
 		// Block longer than client timeout.
 		time.Sleep(500 * time.Millisecond)
-		fmt.Fprint(w, validTranscribeResponse())
+		_, _ = fmt.Fprint(w, validTranscribeResponse())
 	}))
 	defer ts.Close()
 
@@ -220,7 +220,7 @@ func TestHealthCheck_Healthy(t *testing.T) {
 			t.Errorf("expected /v1/health, got %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"ok": true}`)
+		_, _ = fmt.Fprint(w, `{"ok": true}`)
 	}))
 	defer ts.Close()
 
@@ -246,7 +246,7 @@ func TestHealthCheck_Healthy(t *testing.T) {
 func TestHealthCheck_Unhealthy(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, `{"error": "service down"}`)
+		_, _ = fmt.Fprint(w, `{"error": "service down"}`)
 	}))
 	defer ts.Close()
 
@@ -275,7 +275,7 @@ func TestTranscribeFile_BearerToken(t *testing.T) {
 		// Drain body.
 		_, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, validTranscribeResponse())
+		_, _ = fmt.Fprint(w, validTranscribeResponse())
 	}))
 	defer ts.Close()
 
@@ -300,7 +300,7 @@ func TestTranscribeFile_Non5xxError_NoRetry(t *testing.T) {
 		atomic.AddInt32(&calls, 1)
 		_, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w, `{"error": "bad request"}`)
+		_, _ = fmt.Fprint(w, `{"error": "bad request"}`)
 	}))
 	defer ts.Close()
 
@@ -353,7 +353,7 @@ func TestTranscribeFile_OptsModelOverride(t *testing.T) {
 			Duration: 10.0,
 			Model:    "large-v2",
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer ts.Close()
 
@@ -376,7 +376,7 @@ func TestHealthCheck_BearerToken(t *testing.T) {
 			t.Errorf("expected Bearer auth, got %q", auth)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"ok": true}`)
+		_, _ = fmt.Fprint(w, `{"ok": true}`)
 	}))
 	defer ts.Close()
 

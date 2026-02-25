@@ -67,8 +67,8 @@ func TestHealthCheckExistingFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpFile.Name())
-	tmpFile.Close()
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
+	_ = tmpFile.Close()
 
 	b := NewBackend(Config{CredentialsFile: tmpFile.Name()})
 	status, err := b.HealthCheck()

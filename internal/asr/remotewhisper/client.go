@@ -140,7 +140,7 @@ func (c *Client) doTranscribe(filePath, model, language, timestamps string) (*as
 	if err != nil {
 		return nil, fmt.Errorf("open audio file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Build multipart body.
 	pr, pw := io.Pipe()
@@ -149,7 +149,7 @@ func (c *Client) doTranscribe(filePath, model, language, timestamps string) (*as
 	// Write multipart in a goroutine so the pipe feeds the request body.
 	errCh := make(chan error, 1)
 	go func() {
-		defer pw.Close()
+		defer func() { _ = pw.Close() }()
 
 		part, err := writer.CreateFormFile("file", filepath.Base(filePath))
 		if err != nil {
@@ -181,7 +181,7 @@ func (c *Client) doTranscribe(filePath, model, language, timestamps string) (*as
 	if err != nil {
 		return nil, &retryableError{err: fmt.Errorf("http request: %w", err)}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Drain the multipart writer goroutine.
 	if writeErr := <-errCh; writeErr != nil {
@@ -248,7 +248,7 @@ func (c *Client) HealthCheck() (*asr.HealthStatus, error) {
 			Latency: latency,
 		}, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 
