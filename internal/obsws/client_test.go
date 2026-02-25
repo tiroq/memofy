@@ -748,7 +748,7 @@ func TestLogStopRecordEmitsReason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newTestLogger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	client.SetLogger(logger)
 
@@ -795,7 +795,7 @@ func TestLogReconnectAttempt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newTestLogger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	client := NewClient(mock.URL(), "")
 	client.SetLogger(logger)
@@ -810,7 +810,7 @@ func TestLogReconnectAttempt(t *testing.T) {
 	mock.Close()
 	time.Sleep(500 * time.Millisecond)
 
-	logger.Close()
+	_ = logger.Close()
 
 	entries := readLogEntries(t, logPath)
 	found := false
@@ -901,7 +901,7 @@ func newMockOBSServerWith4009() *mockOBSServer {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		// Send hello first so client proceeds to auth
 		hello := map[string]interface{}{
 			"op": 0,
