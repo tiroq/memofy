@@ -7,10 +7,16 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/tiroq/memofy/internal/asr"
+	"github.com/tiroq/memofy/internal/asr/googlestt"
+	"github.com/tiroq/memofy/internal/asr/localwhisper"
+	"github.com/tiroq/memofy/internal/asr/remotewhisper"
 	"github.com/tiroq/memofy/internal/config"
 	"github.com/tiroq/memofy/internal/detector"
 	"github.com/tiroq/memofy/internal/diaglog"
@@ -18,7 +24,9 @@ import (
 	"github.com/tiroq/memofy/internal/ipc"
 	"github.com/tiroq/memofy/internal/obsws"
 	"github.com/tiroq/memofy/internal/pidfile"
+	"github.com/tiroq/memofy/internal/recorder"
 	"github.com/tiroq/memofy/internal/statemachine"
+	"github.com/tiroq/memofy/internal/transcript"
 	"github.com/tiroq/memofy/internal/validation"
 )
 
@@ -42,6 +50,20 @@ var (
 
 	// Logging counters
 	noMeetingLogCounter int
+)
+
+var (
+	// T033: ASR registry, set during startup if ASR is configured. FR-013
+	asrRegistry *asr.Registry
+
+	// T033: ASR mutex guards asrTranscribing flag. FR-013
+	asrMu           sync.Mutex
+	asrTranscribing  bool
+	asrLastFile      string
+	asrLastErr       string
+
+	// T033: package-level config ref for goroutine access. FR-013
+	detCfg *config.DetectionConfig
 )
 
 func main() {
@@ -127,6 +149,43 @@ func main() {
 	}
 	outLog.Printf("[STARTUP] Loaded detection config: %d rules, poll_interval=%ds, thresholds=%d/%d",
 		len(cfg.Rules), cfg.PollInterval, cfg.StartThreshold, cfg.StopThreshold)
+	detCfg = cfg // T033: store for goroutine access (FR-013)
+
+	// T033: Initialize ASR registry if ASR is configured. FR-013
+	if cfg.ASR != nil && cfg.ASR.Enabled {
+		asrRegistry = asr.NewRegistry()
+		switch cfg.ASR.Backend {
+		case "remote_whisper_api":
+			c := remotewhisper.NewClient(remotewhisper.Config{
+				BaseURL:        cfg.ASR.Remote.BaseURL,
+				Token:          cfg.ASR.Remote.Token,
+				TimeoutSeconds: cfg.ASR.Remote.TimeoutSeconds,
+				Retries:        cfg.ASR.Remote.Retries,
+				Model:          cfg.ASR.Remote.Model,
+			})
+			asrRegistry.Register("remote_whisper_api", c)
+		case "local_whisper":
+			b := localwhisper.NewBackend(localwhisper.Config{
+				BinaryPath: cfg.ASR.Local.BinaryPath,
+				ModelPath:  cfg.ASR.Local.ModelPath,
+				Model:      cfg.ASR.Local.Model,
+				Threads:    cfg.ASR.Local.Threads,
+			})
+			asrRegistry.Register("local_whisper", b)
+		case "google_stt":
+			b := googlestt.NewBackend(googlestt.Config{
+				CredentialsFile: cfg.ASR.Google.CredentialsFile,
+				LanguageCode:    cfg.ASR.Google.LanguageCode,
+			})
+			asrRegistry.Register("google_stt", b)
+		}
+		if cfg.ASR.FallbackBackend != "" {
+			asrRegistry.SetFallback(cfg.ASR.FallbackBackend)
+		}
+		outLog.Printf("[STARTUP] ASR enabled (backend=%s, mode=%s)", cfg.ASR.Backend, cfg.ASR.Mode)
+	} else {
+		outLog.Println("[STARTUP] ASR disabled (not configured)")
+	}
 
 	// Initialize OBS - auto-start if needed
 	outLog.Println("[STARTUP] Checking OBS status...")
@@ -228,6 +287,54 @@ func main() {
 	stateMachine.SetDebounceDuration(debounceDur)
 	obsClient.SetLogger(diagLogger) // T022: wire logger into OBS client (FR-001)
 
+	// T035: ASR backend health check at startup. FR-013
+	if asrRegistry != nil {
+		for _, name := range asrRegistry.Backends() {
+			b, _ := asrRegistry.Get(name)
+			if b == nil {
+				continue
+			}
+			hs, err := b.HealthCheck()
+			if err != nil {
+				errLog.Printf("[STARTUP] ASR health check error (backend=%s): %v", name, err)
+				diagLogger.Log(diaglog.LogEntry{
+					Component: diaglog.ComponentASR,
+					Event:     diaglog.EventASRHealthCheck,
+					Payload: map[string]interface{}{
+						"backend": name,
+						"ok":      false,
+						"error":   err.Error(),
+					},
+				})
+			} else if !hs.OK {
+				errLog.Printf("[STARTUP] WARNING: ASR backend %s unhealthy: %s", name, hs.Message)
+				diagLogger.Log(diaglog.LogEntry{
+					Component: diaglog.ComponentASR,
+					Event:     diaglog.EventASRHealthCheck,
+					Payload: map[string]interface{}{
+						"backend": name,
+						"ok":      false,
+						"message": hs.Message,
+					},
+				})
+			} else {
+				outLog.Printf("[STARTUP] ASR backend %s healthy (latency=%s)", name, hs.Latency)
+				diagLogger.Log(diaglog.LogEntry{
+					Component: diaglog.ComponentASR,
+					Event:     diaglog.EventASRHealthCheck,
+					Payload: map[string]interface{}{
+						"backend": name,
+						"ok":      true,
+						"latency": hs.Latency.String(),
+					},
+				})
+			}
+		}
+	}
+
+	// T031: Wrap OBS client in recorder interface (FR-013)
+	rec := recorder.NewOBSAdapter(obsClient)
+
 	// Initialize OBS WebSocket client
 	outLog.Println("[STARTUP] Creating status directory...")
 	statusDir := filepath.Join(os.Getenv("HOME"), ".cache", "memofy")
@@ -238,13 +345,13 @@ func main() {
 
 	// Write initial status
 	outLog.Println("[STARTUP] Writing initial status...")
-	if err := writeStatus(stateMachine, &detector.DetectionState{}, obsClient); err != nil {
+	if err := writeStatus(stateMachine, &detector.DetectionState{}, rec); err != nil {
 		errLog.Printf("Failed to write initial status: %v", err)
 	}
 
 	// Start command file watcher
 	outLog.Println("[STARTUP] Starting command file watcher...")
-	go watchCommands(stateMachine, obsClient)
+	go watchCommands(stateMachine, rec)
 
 	// Main detection loop
 	ticker := time.NewTicker(time.Duration(cfg.PollInterval) * time.Second)
@@ -281,9 +388,9 @@ func main() {
 				currentMeetingTitle = detectionState.WindowTitle
 				currentMeetingStart = time.Now()
 				currentMeetingApp = app
-				handleStartRecording(stateMachine, obsClient, app, detectionState.WindowTitle)
+				handleStartRecording(stateMachine, rec, app, detectionState.WindowTitle)
 			} else if shouldStop {
-				handleStopRecording(stateMachine, obsClient, statemachine.StopRequest{
+				handleStopRecording(stateMachine, rec, statemachine.StopRequest{
 					RequestOrigin: statemachine.OriginAuto,
 					Reason:        "auto_detection_stop",
 					Component:     "auto-detector",
@@ -291,7 +398,7 @@ func main() {
 			}
 
 			// Write status update
-			if err := writeStatus(stateMachine, detectionState, obsClient); err != nil {
+			if err := writeStatus(stateMachine, detectionState, rec); err != nil {
 				errLog.Printf("Failed to write status: %v", err)
 			}
 
@@ -302,7 +409,7 @@ func main() {
 			// Stop recording if active
 			if stateMachine.IsRecording() {
 				outLog.Println("[SHUTDOWN] Recording is active - stopping before shutdown...")
-				handleStopRecording(stateMachine, obsClient, statemachine.StopRequest{
+				handleStopRecording(stateMachine, rec, statemachine.StopRequest{
 					RequestOrigin: statemachine.OriginManual,
 					Reason:        "daemon_shutdown",
 					Component:     "memofy-core",
@@ -317,7 +424,7 @@ func main() {
 }
 
 // handleStartRecording starts OBS recording with appropriate filename
-func handleStartRecording(sm *statemachine.StateMachine, obs *obsws.Client, app detector.DetectedApp, windowTitle string) {
+func handleStartRecording(sm *statemachine.StateMachine, rec recorder.Recorder, app detector.DetectedApp, windowTitle string) {
 	// Generate temporary filename for OBS
 	now := time.Now()
 	appName := "Meeting"
@@ -335,7 +442,7 @@ func handleStartRecording(sm *statemachine.StateMachine, obs *obsws.Client, app 
 
 	outLog.Printf("Starting recording: %s (will rename after stop)", tempFilename)
 
-	if err := obs.StartRecord(tempFilename); err != nil {
+	if err := rec.StartRecording(tempFilename); err != nil {
 		errLog.Printf("Failed to start recording: %v", err)
 		return
 	}
@@ -346,7 +453,7 @@ func handleStartRecording(sm *statemachine.StateMachine, obs *obsws.Client, app 
 
 // handleStopRecording stops OBS recording when the authority check passes,
 // then renames the output file to the proper format.
-func handleStopRecording(sm *statemachine.StateMachine, obs *obsws.Client, req statemachine.StopRequest) {
+func handleStopRecording(sm *statemachine.StateMachine, rec recorder.Recorder, req statemachine.StopRequest) {
 	if !sm.IsRecording() {
 		return
 	}
@@ -361,7 +468,7 @@ func handleStopRecording(sm *statemachine.StateMachine, obs *obsws.Client, req s
 		return
 	}
 
-	outputPath, err := obs.StopRecord(req.Reason)
+	result, err := rec.StopRecording(req.Reason)
 	if err != nil {
 		errLog.Printf("Failed to stop recording: %v", err)
 		return
@@ -370,7 +477,7 @@ func handleStopRecording(sm *statemachine.StateMachine, obs *obsws.Client, req s
 	// Commit state change only after OBS confirmed the stop (FR-007/FR-008).
 	sm.StopRecording(req)
 
-	outLog.Printf("Recording stopped successfully: %s", outputPath)
+	outLog.Printf("Recording stopped successfully: %s", result.OutputPath)
 
 	// Rename file to proper format: YYYY-MM-DD_HHMM_Application_Title.mp4
 	appName := "Meeting"
@@ -392,13 +499,74 @@ func handleStopRecording(sm *statemachine.StateMachine, obs *obsws.Client, req s
 		titlePart)
 
 	// Rename the file
-	finalPath, err := fileutil.RenameRecording(outputPath, newBasename)
+	finalPath, err := fileutil.RenameRecording(result.OutputPath, newBasename)
 	if err != nil {
-		errLog.Printf("Failed to rename recording: %v (original path: %s)", err, outputPath)
+		errLog.Printf("Failed to rename recording: %v (original path: %s)", err, result.OutputPath)
 		return
 	}
 
 	outLog.Printf("Recording renamed to: %s", finalPath)
+
+	// T034: Write sidecar metadata JSON alongside recording. FR-013
+	stopTime := time.Now()
+	recDuration := stopTime.Sub(currentMeetingStart)
+	meta := &fileutil.RecordingMetadata{
+		Version:         Version,
+		SessionID:       sm.SessionID(),
+		StartedAt:       currentMeetingStart,
+		StoppedAt:       stopTime,
+		Duration:        recDuration.String(),
+		DurationMs:      recDuration.Milliseconds(),
+		App:             string(currentMeetingApp),
+		WindowTitle:     currentMeetingTitle,
+		Origin:          string(req.RequestOrigin),
+		RecorderBackend: "obs",
+		OutputFile:      finalPath,
+	}
+	if err := fileutil.WriteMetadata(finalPath, meta); err != nil {
+		errLog.Printf("Failed to write metadata for %s: %v", finalPath, err)
+	}
+
+	// T033: Launch batch ASR transcription in a goroutine if configured. FR-013
+	if asrRegistry != nil {
+		formats := []string{"txt"}
+		if detCfg != nil && detCfg.ASR != nil && len(detCfg.ASR.OutputFormats) > 0 {
+			formats = detCfg.ASR.OutputFormats
+		}
+		go func(filePath string, fmts []string) {
+			asrMu.Lock()
+			asrTranscribing = true
+			asrLastFile = filePath
+			asrLastErr = ""
+			asrMu.Unlock()
+
+			defer func() {
+				asrMu.Lock()
+				asrTranscribing = false
+				asrMu.Unlock()
+			}()
+
+			t, err := asrRegistry.TranscribeWithFallback(filePath, asr.TranscribeOptions{
+				Timestamps: true,
+			})
+			if err != nil {
+				asrMu.Lock()
+				asrLastErr = err.Error()
+				asrMu.Unlock()
+				errLog.Printf("ASR transcription failed for %s: %v", filePath, err)
+				return
+			}
+			basePath := strings.TrimSuffix(filePath, filepath.Ext(filePath))
+			if err := transcript.WriteAll(basePath, t, fmts); err != nil {
+				asrMu.Lock()
+				asrLastErr = err.Error()
+				asrMu.Unlock()
+				errLog.Printf("Failed to write transcript for %s: %v", filePath, err)
+				return
+			}
+			outLog.Printf("ASR transcript written: %s (.%s)", basePath, strings.Join(fmts, ", ."))
+		}(finalPath, formats)
+	}
 
 	// Clear meeting context
 	currentMeetingTitle = ""
@@ -431,8 +599,21 @@ func logDetectionResult(state *detector.DetectionState) {
 }
 
 // writeStatus updates the status.json file
-func writeStatus(sm *statemachine.StateMachine, detection *detector.DetectionState, obs *obsws.Client) error {
-	recordingState := obs.GetRecordingState()
+func writeStatus(sm *statemachine.StateMachine, detection *detector.DetectionState, rec recorder.Recorder) error {
+	// T031: map recorder.RecorderState → obsws.RecordingState for backward-compatible JSON (FR-013)
+	rs := rec.GetState()
+	recordingState := obsws.RecordingState{
+		Recording:   rs.Recording,
+		StartTime:   rs.StartTime,
+		Duration:    rs.Duration,
+		OutputPath:  rs.OutputPath,
+		LastUpdated: time.Now(),
+	}
+	if rs.Connected {
+		recordingState.OBSStatus = "connected"
+	} else {
+		recordingState.OBSStatus = "disconnected"
+	}
 
 	status := ipc.StatusSnapshot{
 		Mode:             sm.CurrentMode(),
@@ -444,34 +625,47 @@ func writeStatus(sm *statemachine.StateMachine, detection *detector.DetectionSta
 		StartStreak:      sm.GetDetectionStreak(),
 		StopStreak:       sm.GetAbsenceStreak(),
 		Timestamp:        time.Now(),
-		OBSConnected:     obs.IsConnected(),
+		OBSConnected:     rec.IsConnected(),
 		// T023: populate session fields (FR-012)
 		RecordingOrigin: string(sm.SessionOrigin()),
 		SessionID:       sm.SessionID(),
+		// T033: populate ASR transcription state (FR-013)
+		ASRState: func() *ipc.ASRState {
+			asrMu.Lock()
+			defer asrMu.Unlock()
+			if !asrTranscribing && asrLastFile == "" && asrLastErr == "" {
+				return nil
+			}
+			return &ipc.ASRState{
+				Transcribing:        asrTranscribing,
+				LastTranscribedFile: asrLastFile,
+				LastError:           asrLastErr,
+			}
+		}(),
 	}
 
 	return ipc.WriteStatus(&status)
 }
 
 // updateStatusMode updates only the mode in status.json, preserving detection state
-func updateStatusMode(sm *statemachine.StateMachine, obs *obsws.Client) error {
+func updateStatusMode(sm *statemachine.StateMachine, rec recorder.Recorder) error {
 	// Read current status
 	status, err := ipc.ReadStatus()
 	if err != nil {
 		// If status doesn't exist yet, create a new one with empty detection
-		return writeStatus(sm, &detector.DetectionState{}, obs)
+		return writeStatus(sm, &detector.DetectionState{}, rec)
 	}
 
 	// Update only the mode and timestamp
 	status.Mode = sm.CurrentMode()
 	status.Timestamp = time.Now()
-	status.OBSConnected = obs.IsConnected()
+	status.OBSConnected = rec.IsConnected()
 
 	return ipc.WriteStatus(status)
 }
 
 // watchCommands monitors cmd.txt for manual control commands
-func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
+func watchCommands(sm *statemachine.StateMachine, rec recorder.Recorder) {
 	cmdPath := filepath.Join(os.Getenv("HOME"), ".cache", "memofy", "cmd.txt")
 	cmdDir := filepath.Dir(cmdPath)
 
@@ -479,7 +673,7 @@ func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		errLog.Printf("fsnotify not available, falling back to polling: %v", err)
-		watchCommandsWithPolling(cmdPath, sm, obs)
+		watchCommandsWithPolling(cmdPath, sm, rec)
 		return
 	}
 	defer func() {
@@ -490,7 +684,7 @@ func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 
 	if err := watcher.Add(cmdDir); err != nil {
 		errLog.Printf("Failed to watch command directory, falling back to polling: %v", err)
-		watchCommandsWithPolling(cmdPath, sm, obs)
+		watchCommandsWithPolling(cmdPath, sm, rec)
 		return
 	}
 
@@ -507,7 +701,7 @@ func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 		case event, ok := <-watcher.Events:
 			if !ok {
 				outLog.Println("fsnotify watcher closed, switching to polling")
-				watchCommandsWithPolling(cmdPath, sm, obs)
+				watchCommandsWithPolling(cmdPath, sm, rec)
 				return
 			}
 
@@ -520,7 +714,7 @@ func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 					continue
 				}
 
-				handleCommand(cmd, sm, obs)
+				handleCommand(cmd, sm, rec)
 				lastCheckTime = time.Now()
 			}
 
@@ -532,7 +726,7 @@ func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 
 					cmd, err := ipc.ReadCommand()
 					if err == nil && cmd != "" {
-						handleCommand(cmd, sm, obs)
+						handleCommand(cmd, sm, rec)
 						lastCheckTime = time.Now()
 					}
 				}
@@ -541,7 +735,7 @@ func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 		case err, ok := <-watcher.Errors:
 			if !ok {
 				outLog.Println("fsnotify error channel closed, switching to polling")
-				watchCommandsWithPolling(cmdPath, sm, obs)
+				watchCommandsWithPolling(cmdPath, sm, rec)
 				return
 			}
 			errLog.Printf("File watcher error: %v", err)
@@ -550,7 +744,7 @@ func watchCommands(sm *statemachine.StateMachine, obs *obsws.Client) {
 }
 
 // watchCommandsWithPolling is a pure polling-based fallback for command monitoring
-func watchCommandsWithPolling(cmdPath string, sm *statemachine.StateMachine, obs *obsws.Client) {
+func watchCommandsWithPolling(cmdPath string, sm *statemachine.StateMachine, rec recorder.Recorder) {
 	outLog.Println("Command watcher started (using polling fallback, 1s interval)")
 
 	ticker := time.NewTicker(1 * time.Second)
@@ -570,7 +764,7 @@ func watchCommandsWithPolling(cmdPath string, sm *statemachine.StateMachine, obs
 
 			cmd, err := ipc.ReadCommand()
 			if err == nil && cmd != "" {
-				handleCommand(cmd, sm, obs)
+			handleCommand(cmd, sm, rec)
 			}
 			lastCheckTime = time.Now()
 		}
@@ -578,7 +772,7 @@ func watchCommandsWithPolling(cmdPath string, sm *statemachine.StateMachine, obs
 }
 
 // handleCommand processes manual control commands
-func handleCommand(cmd ipc.Command, sm *statemachine.StateMachine, obs *obsws.Client) {
+func handleCommand(cmd ipc.Command, sm *statemachine.StateMachine, rec recorder.Recorder) {
 	outLog.Printf("Received command: %s", cmd)
 
 	switch cmd {
@@ -591,10 +785,10 @@ func handleCommand(cmd ipc.Command, sm *statemachine.StateMachine, obs *obsws.Cl
 		currentMeetingTitle = "Manual"
 		currentMeetingStart = time.Now()
 		currentMeetingApp = detector.AppNone
-		handleStartRecording(sm, obs, detector.AppNone, "Manual")
+		handleStartRecording(sm, rec, detector.AppNone, "Manual")
 
 	case ipc.CmdStop:
-		handleStopRecording(sm, obs, statemachine.StopRequest{
+		handleStopRecording(sm, rec, statemachine.StopRequest{
 			RequestOrigin: statemachine.OriginManual,
 			Reason:        "user_stop",
 			Component:     "memofy-core",
@@ -604,7 +798,7 @@ func handleCommand(cmd ipc.Command, sm *statemachine.StateMachine, obs *obsws.Cl
 		sm.SetMode(ipc.ModeAuto)
 		outLog.Println("Mode changed to AUTO")
 		// Immediately update status so UI reflects the change
-		if err := updateStatusMode(sm, obs); err != nil {
+		if err := updateStatusMode(sm, rec); err != nil {
 			errLog.Printf("Failed to write status after mode change: %v", err)
 		}
 
@@ -612,7 +806,7 @@ func handleCommand(cmd ipc.Command, sm *statemachine.StateMachine, obs *obsws.Cl
 		sm.SetMode(ipc.ModePaused)
 		outLog.Println("Mode changed to PAUSED")
 		// Immediately update status so UI reflects the change
-		if err := updateStatusMode(sm, obs); err != nil {
+		if err := updateStatusMode(sm, rec); err != nil {
 			errLog.Printf("Failed to write status after mode change: %v", err)
 		}
 
@@ -620,14 +814,14 @@ func handleCommand(cmd ipc.Command, sm *statemachine.StateMachine, obs *obsws.Cl
 		sm.SetMode(ipc.ModeManual)
 		outLog.Println("Mode changed to MANUAL (detection active, OBS control disabled)")
 		// Immediately update status so UI reflects the change
-		if err := updateStatusMode(sm, obs); err != nil {
+		if err := updateStatusMode(sm, rec); err != nil {
 			errLog.Printf("Failed to write status after mode change: %v", err)
 		}
 
 	case ipc.CmdToggle:
 		// Toggle recording state: if recording, stop; else start
 		if sm.IsRecording() {
-			handleStopRecording(sm, obs, statemachine.StopRequest{
+			handleStopRecording(sm, rec, statemachine.StopRequest{
 				RequestOrigin: statemachine.OriginManual,
 				Reason:        "user_stop",
 				Component:     "memofy-core",
@@ -641,7 +835,7 @@ func handleCommand(cmd ipc.Command, sm *statemachine.StateMachine, obs *obsws.Cl
 			currentMeetingTitle = "Manual"
 			currentMeetingStart = time.Now()
 			currentMeetingApp = detector.AppNone
-			handleStartRecording(sm, obs, detector.AppNone, "Manual")
+			handleStartRecording(sm, rec, detector.AppNone, "Manual")
 		}
 
 	case ipc.CmdQuit:
