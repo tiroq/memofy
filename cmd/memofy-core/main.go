@@ -58,9 +58,9 @@ var (
 
 	// T033: ASR mutex guards asrTranscribing flag. FR-013
 	asrMu           sync.Mutex
-	asrTranscribing  bool
-	asrLastFile      string
-	asrLastErr       string
+	asrTranscribing bool
+	asrLastFile     string
+	asrLastErr      string
 
 	// T033: package-level config ref for goroutine access. FR-013
 	detCfg *config.DetectionConfig
@@ -764,7 +764,7 @@ func watchCommandsWithPolling(cmdPath string, sm *statemachine.StateMachine, rec
 
 			cmd, err := ipc.ReadCommand()
 			if err == nil && cmd != "" {
-			handleCommand(cmd, sm, rec)
+				handleCommand(cmd, sm, rec)
 			}
 			lastCheckTime = time.Now()
 		}
