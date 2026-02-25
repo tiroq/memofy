@@ -255,3 +255,98 @@ func TestDetectionConfig_allFields(t *testing.T) {
 		t.Errorf("Rules length: got %d, want 1", len(cfg.Rules))
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T032: ASR Config Validation (FR-013)
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestValidate_noASR_backwardCompat(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.ASR = nil
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("config without ASR should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_asrDisabled_noValidation(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.ASR = &ASRConfig{Enabled: false, Backend: "invalid"}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("disabled ASR should skip validation, got: %v", err)
+	}
+}
+
+func TestValidate_asrEnabled_valid(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.ASR = &ASRConfig{
+		Enabled:       true,
+		Mode:          "batch",
+		Backend:       "remote_whisper_api",
+		OutputFormats: []string{"txt", "srt"},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("valid ASR config should pass, got: %v", err)
+	}
+}
+
+func TestValidate_asrEnabled_invalidMode(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.ASR = &ASRConfig{Enabled: true, Mode: "realtime", Backend: "local_whisper"}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for invalid ASR mode")
+	}
+}
+
+func TestValidate_asrEnabled_invalidBackend(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.ASR = &ASRConfig{Enabled: true, Backend: "openai"}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for invalid ASR backend")
+	}
+}
+
+func TestValidate_asrEnabled_invalidFormat(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.ASR = &ASRConfig{Enabled: true, Backend: "local_whisper", OutputFormats: []string{"txt", "mp3"}}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for invalid output format")
+	}
+}
+
+func TestValidate_asrEnabled_fallbackSameAsBackend(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.ASR = &ASRConfig{Enabled: true, Backend: "local_whisper", FallbackBackend: "local_whisper"}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error when fallback equals primary backend")
+	}
+}
+
+func TestValidate_asrEnabled_fallbackValid(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.ASR = &ASRConfig{Enabled: true, Backend: "local_whisper", FallbackBackend: "remote_whisper_api"}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("valid fallback should pass, got: %v", err)
+	}
+}
+
+func TestASRConfig_applyDefaults_emptyMode(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.ASR = &ASRConfig{Enabled: true, Backend: "local_whisper"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ASR.Mode != "batch" {
+		t.Errorf("Mode default: got %q, want %q", cfg.ASR.Mode, "batch")
+	}
+	if len(cfg.ASR.OutputFormats) != 1 || cfg.ASR.OutputFormats[0] != "txt" {
+		t.Errorf("OutputFormats default: got %v, want [txt]", cfg.ASR.OutputFormats)
+	}
+}
+
+func TestValidate_asrEnabled_invalidFallbackBackend(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.ASR = &ASRConfig{Enabled: true, Backend: "local_whisper", FallbackBackend: "invalid"}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for invalid fallback backend name")
+	}
+}

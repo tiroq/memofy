@@ -22,6 +22,7 @@ type DetectionConfig struct {
 	StartThreshold  int             `json:"start_threshold"`             // Consecutive detections to start
 	StopThreshold   int             `json:"stop_threshold"`              // Consecutive non-detections to stop
 	AllowDevUpdates bool            `json:"allow_dev_updates,omitempty"` // Allow pre-release and dev versions (optional, defaults to false)
+	ASR             *ASRConfig      `json:"asr,omitempty"`              // T032: ASR configuration (nil = disabled). FR-013
 }
 
 // LoadDetectionRules reads configuration from ~/.config/memofy/detection-rules.json
@@ -126,5 +127,111 @@ func (c *DetectionConfig) Validate() error {
 		return fmt.Errorf("at least one detection rule must be enabled")
 	}
 
+	// T032: validate ASR config (FR-013)
+	if err := c.validateASR(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// T032: ASR configuration types. FR-013
+
+// ASRConfig holds Automatic Speech Recognition settings.
+type ASRConfig struct {
+	Enabled         bool     `json:"enabled"`                     // false = ASR disabled entirely
+	Mode            string   `json:"mode"`                        // "batch" | "live" | "hybrid" (default "batch")
+	Backend         string   `json:"backend"`                     // "remote_whisper_api" | "local_whisper" | "google_stt"
+	FallbackBackend string   `json:"fallback_backend,omitempty"`  // optional fallback
+	DraftModel      string   `json:"draft_model,omitempty"`       // future: live/hybrid
+	RecoveryModel   string   `json:"recovery_model,omitempty"`    // future: two-pass
+	OutputFormats   []string `json:"output_formats,omitempty"`    // ["txt", "srt", "vtt"] default ["txt"]
+
+	Remote RemoteWhisperConfig `json:"remote,omitempty"`
+	Local  LocalWhisperConfig  `json:"local,omitempty"`
+	Google GoogleSTTConfig     `json:"google,omitempty"`
+}
+
+// RemoteWhisperConfig holds remote Whisper API backend settings.
+type RemoteWhisperConfig struct {
+	BaseURL        string `json:"base_url"`
+	Token          string `json:"token,omitempty"`
+	TimeoutSeconds int    `json:"timeout_seconds"` // default 120
+	Retries        int    `json:"retries"`          // default 3
+	Model          string `json:"model"`            // default "small"
+}
+
+// LocalWhisperConfig holds local whisper CLI backend settings.
+type LocalWhisperConfig struct {
+	BinaryPath string `json:"binary_path"`
+	ModelPath  string `json:"model_path"`
+	Model      string `json:"model"`   // default "small"
+	Threads    int    `json:"threads"` // 0 = auto
+}
+
+// GoogleSTTConfig holds Google Cloud Speech-to-Text settings.
+type GoogleSTTConfig struct {
+	CredentialsFile string `json:"credentials_file,omitempty"`
+	LanguageCode    string `json:"language_code,omitempty"` // default "en-US"
+}
+
+// validASRModes lists accepted ASR modes.
+var validASRModes = map[string]bool{
+	"batch":  true,
+	"live":   true,
+	"hybrid": true,
+}
+
+// validASRBackends lists accepted ASR backend names.
+var validASRBackends = map[string]bool{
+	"remote_whisper_api": true,
+	"local_whisper":      true,
+	"google_stt":         true,
+}
+
+// validOutputFormats lists accepted transcript output formats.
+var validOutputFormats = map[string]bool{
+	"txt": true,
+	"srt": true,
+	"vtt": true,
+}
+
+// applyDefaults fills in zero-value fields with sensible defaults.
+func (a *ASRConfig) applyDefaults() {
+	if a.Mode == "" {
+		a.Mode = "batch"
+	}
+	if len(a.OutputFormats) == 0 {
+		a.OutputFormats = []string{"txt"}
+	}
+}
+
+// validateASR validates ASR configuration if present and enabled.
+func (c *DetectionConfig) validateASR() error {
+	if c.ASR == nil || !c.ASR.Enabled {
+		return nil
+	}
+
+	c.ASR.applyDefaults()
+
+	if !validASRModes[c.ASR.Mode] {
+		return fmt.Errorf("asr.mode must be \"batch\", \"live\", or \"hybrid\", got %q", c.ASR.Mode)
+	}
+	if !validASRBackends[c.ASR.Backend] {
+		return fmt.Errorf("asr.backend must be \"remote_whisper_api\", \"local_whisper\", or \"google_stt\", got %q", c.ASR.Backend)
+	}
+	if c.ASR.FallbackBackend != "" {
+		if !validASRBackends[c.ASR.FallbackBackend] {
+			return fmt.Errorf("asr.fallback_backend must be a valid backend name, got %q", c.ASR.FallbackBackend)
+		}
+		if c.ASR.FallbackBackend == c.ASR.Backend {
+			return fmt.Errorf("asr.fallback_backend must differ from asr.backend")
+		}
+	}
+	for _, f := range c.ASR.OutputFormats {
+		if !validOutputFormats[f] {
+			return fmt.Errorf("asr.output_formats: unknown format %q", f)
+		}
+	}
 	return nil
 }
