@@ -19,9 +19,11 @@ const (
 	ComponentReconnect    = "reconnect-handler"
 	ComponentDiagExport   = "diag-export"
 	ComponentMemofyCore   = "memofy-core"
+	// T035: ASR component label. FR-013
+	ComponentASR = "asr"
 )
 
-// ── Event names (FR-001 / FR-003 / FR-011 / FR-012) ─────────────────────────
+// ── Event names (FR-001 / FR-003 / FR-011 / FR-012 / FR-013) ─────────────────
 
 const (
 	EventWSSend                = "ws_send"
@@ -35,6 +37,11 @@ const (
 	EventRecordingStart        = "recording_start"
 	EventRecordingStop         = "recording_stop"
 	EventRecordingStopRejected = "recording_stop_rejected"
+	// T035: ASR lifecycle events. FR-013
+	EventASRHealthCheck        = "asr_health_check"
+	EventASRTranscribeStart    = "asr_transcribe_start"
+	EventASRTranscribeComplete = "asr_transcribe_complete"
+	EventASRTranscribeFailed   = "asr_transcribe_failed"
 )
 
 // ── LogEntry ─────────────────────────────────────────────────────────────────
