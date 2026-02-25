@@ -273,7 +273,7 @@ func main() {
 		errLog.Printf("[STARTUP] WARNING: could not open diagnostic log at %s: %v (continuing)", logPath, diagErr)
 		diagLogger = diaglog.NewNoOp()
 	}
-	defer diagLogger.Close()
+	defer func() { _ = diagLogger.Close() }()
 	diaglog.Version = Version
 
 	// Wire debounce from env var (FR-008)
