@@ -840,7 +840,7 @@ func TestLogMultiClientWarning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newTestLogger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	client := NewClient(mock4009.URL(), "")
 	client.SetLogger(logger)
@@ -848,7 +848,7 @@ func TestLogMultiClientWarning(t *testing.T) {
 	_ = client.Connect()
 	time.Sleep(300 * time.Millisecond)
 
-	logger.Close()
+	_ = logger.Close()
 
 	entries := readLogEntries(t, logPath)
 	found := false
