@@ -54,8 +54,8 @@ func WriteMetadata(recordingPath string, meta *RecordingMetadata) error {
 	success := false
 	defer func() {
 		if !success {
-			tmpFile.Close()
-			os.Remove(tmpPath)
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpPath)
 		}
 	}()
 
@@ -74,7 +74,7 @@ func WriteMetadata(recordingPath string, meta *RecordingMetadata) error {
 	success = true // prevent defer cleanup
 
 	if err := os.Rename(tmpPath, metaPath); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("rename metadata: %w", err)
 	}
 	return nil
