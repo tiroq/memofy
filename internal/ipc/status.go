@@ -17,6 +17,13 @@ const (
 	ModePaused OperatingMode = "paused" // All detection suspended
 )
 
+// ASRState captures current ASR transcription activity. T033: FR-013
+type ASRState struct {
+	Transcribing        bool   `json:"transcribing"`
+	LastTranscribedFile string `json:"last_transcribed_file,omitempty"`
+	LastError           string `json:"last_error,omitempty"`
+}
+
 // StatusSnapshot represents the complete system state at a point in time
 type StatusSnapshot struct {
 	Mode             OperatingMode `json:"mode"`                       // Current operating mode
@@ -33,6 +40,7 @@ type StatusSnapshot struct {
 	OBSConnected     bool          `json:"obs_connected"`              // OBS connection status
 	RecordingOrigin  string        `json:"recording_origin,omitempty"` // origin of active session: "manual", "auto", "forced"
 	SessionID        string        `json:"session_id,omitempty"`       // unique ID for active recording session
+	ASRState        *ASRState     `json:"asr_state,omitempty"`        // T033: ASR transcription state. FR-013
 }
 
 // WriteStatus persists StatusSnapshot to ~/.cache/memofy/status.json using atomic write
