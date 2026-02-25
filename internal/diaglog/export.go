@@ -35,7 +35,7 @@ func Export(logPath, dest string) (path string, lines int, err error) {
 		}
 		return "", 0, fmt.Errorf("log file unreadable: %w", err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	// Buffer all lines (log is capped at 10 MB so this is safe).
 	var rawLines [][]byte
@@ -57,7 +57,7 @@ func Export(logPath, dest string) (path string, lines int, err error) {
 	if err != nil {
 		return "", 0, fmt.Errorf("output file could not be created: %w", err)
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	// Write bundle header.
 	bundle := DiagBundle{

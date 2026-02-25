@@ -16,7 +16,7 @@ func TestLogWritesNDJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	entries := []LogEntry{
 		{Component: ComponentOBSClient, Event: EventWSConnect},
@@ -34,7 +34,7 @@ func TestLogWritesNDJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	var lines []map[string]interface{}
@@ -68,7 +68,7 @@ func TestRollingTruncatesAt10MB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newRollingWriter: %v", err)
 	}
-	defer rw.close()
+	defer func() { _ = rw.close() }()
 
 	chunk := []byte(strings.Repeat("x", 512) + "\n")
 	for i := 0; i < 3; i++ {
@@ -120,7 +120,7 @@ func TestRedactSensitiveFields(t *testing.T) {
 }
 
 func TestNoOpWhenDisabled(t *testing.T) {
-	os.Unsetenv("MEMOFY_DEBUG_RECORDING")
+	_ = os.Unsetenv("MEMOFY_DEBUG_RECORDING")
 
 	tmp := t.TempDir() + "/noop.ndjson"
 	l, err := New(tmp)

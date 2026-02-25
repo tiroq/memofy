@@ -17,9 +17,9 @@ func seedLogFile(t *testing.T, n int) string {
 	if err != nil {
 		t.Fatalf("create seed: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	for i := 0; i < n; i++ {
-		fmt.Fprintf(f, "{\"ts\":\"2026-01-01T00:00:00Z\",\"component\":\"test\",\"event\":\"e%d\"}\n", i)
+		_, _ = fmt.Fprintf(f, "{\"ts\":\"2026-01-01T00:00:00Z\",\"component\":\"test\",\"event\":\"e%d\"}\n", i)
 	}
 	return tmp
 }
@@ -40,7 +40,7 @@ func TestExportWritesBundleHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open output: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	if !scanner.Scan() {
@@ -115,9 +115,9 @@ func TestExportCompletesUnder10s(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	for i := 0; i < 10000; i++ {
-		fmt.Fprintf(f, "{\"ts\":\"2026-01-01T00:00:00Z\",\"component\":\"test\",\"event\":\"e%d\"}\n", i)
+		_, _ = fmt.Fprintf(f, "{\"ts\":\"2026-01-01T00:00:00Z\",\"component\":\"test\",\"event\":\"e%d\"}\n", i)
 	}
-	f.Close()
+	_ = f.Close()
 
 	start := time.Now()
 	_, _, err = Export(tmp, t.TempDir())
