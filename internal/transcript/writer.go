@@ -126,8 +126,8 @@ func atomicWrite(path string, data []byte) error {
 	// Ensure cleanup on error.
 	defer func() {
 		if tmpFile != nil {
-			tmpFile.Close()
-			os.Remove(tmpPath)
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpPath)
 		}
 	}()
 
@@ -144,7 +144,7 @@ func atomicWrite(path string, data []byte) error {
 
 	if err := os.Rename(tmpPath, path); err != nil {
 		// Clean up temp file on rename failure.
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("renaming transcript: %w", err)
 	}
 	return nil
