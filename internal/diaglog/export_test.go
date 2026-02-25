@@ -72,7 +72,7 @@ func TestExportContainsAllLines(t *testing.T) {
 
 	readLines := func(p string, skip int) []string {
 		f, _ := os.Open(p)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		var ls []string
 		s := bufio.NewScanner(f)
 		for s.Scan() {
