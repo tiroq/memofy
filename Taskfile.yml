@@ -22,8 +22,9 @@ tasks:
     sources:
       - cmd/memofy/**/*.go
       - internal/**/*.go
-    generates:
-      - build/{{.BINARY}}
+      - pkg/**/*.go
+    # generates:
+      # - build/{{.BINARY}}
     cmds:
       - mkdir -p build
       - '{{.GO_CMD}} build -ldflags "-X main.Version={{.VERSION}}" -o build/{{.BINARY}} ./cmd/memofy'
