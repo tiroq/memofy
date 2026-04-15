@@ -49,6 +49,7 @@ type StatusSnapshot struct {
 	FormatProfile  string
 	ZoomRunning    bool
 	TeamsRunning   bool
+	MeetRunning    bool
 	MicActive      bool
 	LastError      string
 }
@@ -194,6 +195,9 @@ func (e *Engine) Status() string {
 	if snap.TeamsRunning {
 		s += " | Teams"
 	}
+	if snap.MeetRunning {
+		s += " | Meet"
+	}
 	return s
 }
 
@@ -212,6 +216,7 @@ func (e *Engine) GetStatus() StatusSnapshot {
 		FormatProfile:  e.cfg.Audio.FormatProfile,
 		ZoomRunning:    snap.ZoomRunning,
 		TeamsRunning:   snap.TeamsRunning,
+		MeetRunning:    snap.MeetRunning,
 		MicActive:      snap.MicActive,
 		LastError:      e.lastError,
 	}
@@ -220,6 +225,11 @@ func (e *Engine) GetStatus() StatusSnapshot {
 func (e *Engine) loop() {
 	bufSize := e.stream.FramesPerBuffer() * e.stream.Channels()
 	buf := make([]float32, bufSize)
+
+	// Periodic RMS diagnostics: log peak level every 5 s so problems are visible in the log.
+	var peakRMS float64
+	lastRMSLog := time.Now()
+
 	for {
 		select {
 		case <-e.stopCh:
@@ -231,6 +241,15 @@ func (e *Engine) loop() {
 			continue
 		}
 		rms := audio.RMS(buf)
+		if rms > peakRMS {
+			peakRMS = rms
+		}
+		if time.Since(lastRMSLog) >= 5*time.Second {
+			state := e.sm.CurrentState()
+			e.logger.Printf("[audio] peak_rms=%.6f threshold=%.6f state=%s", peakRMS, e.cfg.Audio.Threshold, state)
+			peakRMS = 0
+			lastRMSLog = time.Now()
+		}
 		action := e.sm.ProcessAudio(rms, e.cfg.Audio.Threshold)
 		switch action {
 		case statemachine.ActionStartRecording:
@@ -254,6 +273,8 @@ func (e *Engine) pollMonitor() {
 			return
 		case <-ticker.C:
 			snap := e.mon.Poll()
+			e.logger.Printf("[monitor] zoom=%v teams=%v meet=%v mic=%v",
+				snap.ZoomRunning, snap.TeamsRunning, snap.MeetRunning, snap.MicActive)
 			e.mu.Lock()
 			e.monSnapshot = snap
 			e.mu.Unlock()
@@ -335,6 +356,7 @@ func (e *Engine) finalizeRecording() {
 		MicActive:           snap.MicActive,
 		ZoomRunning:         snap.ZoomRunning,
 		TeamsRunning:        snap.TeamsRunning,
+		MeetRunning:         snap.MeetRunning,
 		Platform:            runtime.GOOS,
 		DeviceName:          e.deviceName,
 		FormatProfile:       string(spec.Profile),
