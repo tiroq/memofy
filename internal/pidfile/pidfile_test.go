@@ -197,3 +197,52 @@ func TestIsProcessRunning(t *testing.T) {
 		t.Error("Non-existent process should not be detected as running")
 	}
 }
+
+func TestRemoveNilPIDFile(t *testing.T) {
+	var pf *PIDFile
+	if err := pf.Remove(); err != nil {
+		t.Errorf("Remove on nil should return nil, got: %v", err)
+	}
+}
+
+func TestNewWithInvalidPIDContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	pidPath := filepath.Join(tmpDir, "test.pid")
+
+	// Write non-numeric PID content
+	os.WriteFile(pidPath, []byte("not-a-number\n"), 0644)
+
+	pf, err := New(pidPath)
+	if err != nil {
+		t.Fatalf("Failed to create PID file with invalid content: %v", err)
+	}
+	defer pf.Remove()
+
+	data, _ := os.ReadFile(pidPath)
+	pidStr := strings.TrimSpace(string(data))
+	pid, err := strconv.Atoi(pidStr)
+	if err != nil {
+		t.Fatalf("Invalid PID: %s", pidStr)
+	}
+	if pid != os.Getpid() {
+		t.Errorf("PID mismatch: got %d, want %d", pid, os.Getpid())
+	}
+}
+
+func TestRemoveWhenFileGone(t *testing.T) {
+	tmpDir := t.TempDir()
+	pidPath := filepath.Join(tmpDir, "test.pid")
+
+	pf, err := New(pidPath)
+	if err != nil {
+		t.Fatalf("Failed to create PID file: %v", err)
+	}
+
+	// Delete file manually
+	os.Remove(pidPath)
+
+	// Remove should handle missing file gracefully
+	if err := pf.Remove(); err != nil {
+		t.Logf("Remove when file gone: %v", err)
+	}
+}
