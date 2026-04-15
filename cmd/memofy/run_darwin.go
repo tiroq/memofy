@@ -20,6 +20,9 @@ func init() {
 	runtime.LockOSThread()
 }
 
+// prevent GC of StatusBarApp while AppKit run loop is active
+var statusBarKeepAlive *macui.StatusBarApp
+
 // platformRunLoop starts the macOS menu bar UI and runs the AppKit event loop.
 // It blocks until the application terminates.
 func platformRunLoop(eng *engine.Engine, cfg config.Config, version string, logger *log.Logger) {
@@ -27,6 +30,7 @@ func platformRunLoop(eng *engine.Engine, cfg config.Config, version string, logg
 		app.SetActivationPolicy(appkit.ApplicationActivationPolicyAccessory)
 
 		statusBarApp := macui.NewStatusBarApp(version, eng, cfg)
+		statusBarKeepAlive = statusBarApp
 		statusBarApp.StartUpdateTimer()
 
 		// Handle shutdown signals in a goroutine
