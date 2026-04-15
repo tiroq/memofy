@@ -198,6 +198,120 @@ func TestArmingCancelledBySilence(t *testing.T) {
 	}
 }
 
+func TestEventString(t *testing.T) {
+	tests := []struct {
+		event Event
+		want  string
+	}{
+		{EventSoundDetected, "sound_detected"},
+		{EventSilenceDetected, "silence_detected"},
+		{EventSilenceThresholdExceeded, "silence_threshold_exceeded"},
+		{EventRecordingStarted, "recording_started"},
+		{EventRecordingFinalized, "recording_finalized"},
+		{Event(99), "unknown(99)"},
+	}
+	for _, tc := range tests {
+		if got := tc.event.String(); got != tc.want {
+			t.Errorf("Event(%d).String() = %q, want %q", int(tc.event), got, tc.want)
+		}
+	}
+}
+
+func TestActionString(t *testing.T) {
+	tests := []struct {
+		action Action
+		want   string
+	}{
+		{ActionNone, "none"},
+		{ActionStartRecording, "start_recording"},
+		{ActionStopRecording, "stop_recording"},
+		{ActionContinue, "continue"},
+		{Action(99), "unknown(99)"},
+	}
+	for _, tc := range tests {
+		if got := tc.action.String(); got != tc.want {
+			t.Errorf("Action(%d).String() = %q, want %q", int(tc.action), got, tc.want)
+		}
+	}
+}
+
+func TestRecordingStart(t *testing.T) {
+	sm := New(60*time.Second, 0)
+
+	// Before recording, RecordingStart should be zero
+	if !sm.RecordingStart().IsZero() {
+		t.Error("RecordingStart should be zero before recording")
+	}
+
+	// Start recording
+	sm.ProcessAudio(0.05, 0.02) // arming
+	sm.ProcessAudio(0.05, 0.02) // recording
+
+	rs := sm.RecordingStart()
+	if rs.IsZero() {
+		t.Error("RecordingStart should not be zero during recording")
+	}
+
+	// After reset, RecordingStart should be zero again
+	sm.Reset()
+	if !sm.RecordingStart().IsZero() {
+		t.Error("RecordingStart should be zero after reset")
+	}
+}
+
+func TestSilenceElapsed(t *testing.T) {
+	sm := New(60*time.Second, 0)
+
+	// Not in silence_wait: should return 0
+	if sm.SilenceElapsed() != 0 {
+		t.Error("SilenceElapsed should be 0 in idle state")
+	}
+
+	// Get to silence_wait
+	sm.ProcessAudio(0.05, 0.02)  // arming
+	sm.ProcessAudio(0.05, 0.02)  // recording
+	sm.ProcessAudio(0.001, 0.02) // silence_wait
+
+	time.Sleep(10 * time.Millisecond)
+	elapsed := sm.SilenceElapsed()
+	if elapsed < 10*time.Millisecond {
+		t.Errorf("SilenceElapsed = %v, want >= 10ms", elapsed)
+	}
+}
+
+func TestEnterError(t *testing.T) {
+	sm := New(60*time.Second, 0)
+	sm.EnterError()
+	if sm.CurrentState() != StateError {
+		t.Errorf("state = %s, want error", sm.CurrentState())
+	}
+
+	// Error state should return ActionNone
+	action := sm.ProcessAudio(0.05, 0.02)
+	if action != ActionNone {
+		t.Errorf("action in error state = %s, want none", action)
+	}
+}
+
+func TestFinalizingReturnsNone(t *testing.T) {
+	sm := New(10*time.Millisecond, 0)
+
+	// Get to finalizing
+	sm.ProcessAudio(0.05, 0.02)  // arming
+	sm.ProcessAudio(0.05, 0.02)  // recording
+	sm.ProcessAudio(0.001, 0.02) // silence_wait
+	time.Sleep(15 * time.Millisecond)
+	sm.ProcessAudio(0.001, 0.02) // finalizing
+
+	if sm.CurrentState() != StateFinalizing {
+		t.Fatalf("expected finalizing, got %s", sm.CurrentState())
+	}
+	action := sm.ProcessAudio(0.05, 0.02)
+	if action != ActionNone {
+		t.Errorf("action in finalizing = %s, want none", action)
+	}
+}
+
 func TestErrorState(t *testing.T) {
 	sm := New(60*time.Second, 0)
 
