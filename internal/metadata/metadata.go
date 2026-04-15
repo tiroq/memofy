@@ -33,6 +33,7 @@ type Recording struct {
 	MicActive           bool      `json:"mic_active,omitempty"`
 	ZoomRunning         bool      `json:"zoom_running,omitempty"`
 	TeamsRunning        bool      `json:"teams_running,omitempty"`
+	MeetRunning         bool      `json:"meet_running,omitempty"`
 	AppVersion          string    `json:"version"`
 }
 
