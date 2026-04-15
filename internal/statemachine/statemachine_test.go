@@ -117,8 +117,8 @@ func TestStateChangeCallback(t *testing.T) {
 		transitions = append(transitions, string(from)+"→"+string(to))
 	})
 
-	sm.ProcessAudio(0.05, 0.02) // idle → detecting_sound
-	sm.ProcessAudio(0.05, 0.02) // detecting_sound → recording
+	sm.ProcessAudio(0.05, 0.02)  // idle → detecting_sound
+	sm.ProcessAudio(0.05, 0.02)  // detecting_sound → recording
 	sm.ProcessAudio(0.001, 0.02) // recording → silence_wait
 
 	if len(transitions) != 3 {
