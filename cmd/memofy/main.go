@@ -125,6 +125,13 @@ func cmdRun() {
 func cmdStatus() {
 	cfg := loadConfig()
 	logger := log.New(os.Stderr, "", 0)
+
+	fmt.Printf("Platform:     %s/%s\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("Format:       %s\n", cfg.Audio.FormatProfile)
+	fmt.Printf("Output Dir:   %s\n", cfg.Output.Dir)
+	fmt.Printf("Threshold:    %.4f\n", cfg.Audio.Threshold)
+	fmt.Printf("Silence:      %ds\n", cfg.Audio.SilenceSeconds)
+
 	eng := engine.New(cfg, logger)
 	fmt.Println(eng.Status())
 }
@@ -220,6 +227,22 @@ func cmdDoctor() {
 	} else {
 		fmt.Println("  Not found (using defaults)")
 	}
+
+	// Check recorder backend (conversion tool)
+	fmt.Print("\nRecorder backend: ")
+	if audio.CanConvertToM4A() {
+		fmt.Println("OK - M4A conversion available")
+	} else {
+		switch runtime.GOOS {
+		case "darwin":
+			fmt.Println("WARNING - afconvert not found (M4A output may fail)")
+		case "linux":
+			fmt.Println("WARNING - ffmpeg not found (M4A output may fail, install ffmpeg)")
+		}
+	}
+
+	// Format profile
+	fmt.Printf("Format profile: %s\n", cfg.Audio.FormatProfile)
 
 	fmt.Println()
 	if ok {
