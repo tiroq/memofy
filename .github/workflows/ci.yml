@@ -44,11 +44,8 @@ jobs:
             go-${{ runner.os }}-amd64-
             go-${{ runner.os }}-
 
-      - name: Build memofy-core
-        run: go build ./cmd/memofy-core
-
-      - name: Build memofy-ui
-        run: go build ./cmd/memofy-ui
+      - name: Build memofy
+        run: go build ./cmd/memofy
 
       - name: Run unit tests
         run: |

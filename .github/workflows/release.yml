@@ -65,7 +65,7 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
-      - name: Build binaries
+      - name: Build binary
         shell: bash
         env:
           GOOS: ${{ matrix.goos }}
@@ -73,31 +73,26 @@ jobs:
           CGO_ENABLED: '1'
         run: |
           mkdir -p bin
-          go build -o "bin/memofy-core-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-core &
-          go build -o "bin/memofy-ui-${{ matrix.artifact_name }}"  -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-ui  &
-          wait
+          go build -o "bin/memofy-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy
 
-      - name: Sign binaries (macOS)
+      - name: Sign binary (macOS)
         if: matrix.goos == 'darwin'
         run: |
-          echo "Signing binaries with ad-hoc signature..."
-          codesign --force --deep --sign - "bin/memofy-core-${{ matrix.artifact_name }}"
-          codesign --force --deep --sign - "bin/memofy-ui-${{ matrix.artifact_name }}"
+          echo "Signing binary with ad-hoc signature..."
+          codesign --force --deep --sign - "bin/memofy-${{ matrix.artifact_name }}"
 
-          echo "Verifying signatures..."
-          codesign --verify --verbose "bin/memofy-core-${{ matrix.artifact_name }}"
-          codesign --verify --verbose "bin/memofy-ui-${{ matrix.artifact_name }}"
+          echo "Verifying signature..."
+          codesign --verify --verbose "bin/memofy-${{ matrix.artifact_name }}"
 
-          echo "✓ Binaries signed successfully"
+          echo "✓ Binary signed successfully"
 
       - name: Create archive
         run: |
           ARCHIVE_DIR="memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
           mkdir -p "$ARCHIVE_DIR"
-          cp "bin/memofy-core-${{ matrix.artifact_name }}" "$ARCHIVE_DIR/memofy-core"
-          cp "bin/memofy-ui-${{ matrix.artifact_name }}"  "$ARCHIVE_DIR/memofy-ui"
+          cp "bin/memofy-${{ matrix.artifact_name }}" "$ARCHIVE_DIR/memofy"
           cp README.md LICENSE "$ARCHIVE_DIR/" || true
-          cp -r configs scripts "$ARCHIVE_DIR/" || true
+          cp config.example.yaml "$ARCHIVE_DIR/" || true
           tar czf "$ARCHIVE_DIR.tar.gz" "$ARCHIVE_DIR"
           rm -rf "$ARCHIVE_DIR"
 
@@ -171,7 +166,7 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
-      - name: Build memofy-core
+      - name: Build memofy
         shell: bash
         env:
           GOOS: ${{ matrix.goos }}
@@ -179,15 +174,15 @@ jobs:
           CGO_ENABLED: '0'
         run: |
           mkdir -p bin
-          go build -o "bin/memofy-core-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy-core
+          go build -o "bin/memofy-${{ matrix.artifact_name }}" -ldflags "-X main.Version=${{ steps.version.outputs.version }}" ./cmd/memofy
 
       - name: Create archive (Unix)
         if: runner.os != 'Windows'
         run: |
           mkdir -p "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
-          cp bin/memofy-core-* "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy-core"
+          cp bin/memofy-* "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy"
           cp README.md LICENSE "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" || true
-          cp -r configs scripts "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" || true
+          cp config.example.yaml "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" || true
           tar czf "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" \
             "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
           rm -rf "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
@@ -197,9 +192,9 @@ jobs:
         shell: powershell
         run: |
           mkdir "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
-          Copy-Item "bin/memofy-core-*" -Destination "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy-core.exe"
+          Copy-Item "bin/memofy-*" -Destination "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/memofy.exe"
           Copy-Item "README.md", "LICENSE" -Destination "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" -ErrorAction SilentlyContinue
-          Copy-Item "configs", "scripts" -Destination "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "config.example.yaml" -Destination "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/" -ErrorAction SilentlyContinue
           Compress-Archive -Path "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}" `
             -DestinationPath "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.zip"
           Remove-Item -Path "memofy-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}" -Recurse
