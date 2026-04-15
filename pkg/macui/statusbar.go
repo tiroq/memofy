@@ -96,6 +96,8 @@ func (app *StatusBarApp) pollAndUpdate() {
 	if stateChanged {
 		app.updateMenuBarIcon(status)
 		app.rebuildMenu()
+		log.Printf("[status] state=%s device=%q format=%s file=%q error=%q",
+			status.State, status.DeviceName, status.FormatProfile, filepath.Base(status.CurrentFile), status.LastError)
 	}
 
 	if recordingChanged {
