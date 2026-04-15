@@ -32,8 +32,9 @@ type AudioConfig struct {
 	SilenceHysteresis   float64 `yaml:"silence_hysteresis"`    // hysteresis value
 	HysteresisRatio     float64 `yaml:"hysteresis_ratio"`      // ratio for hysteresis band
 	ActivationMs        int     `yaml:"activation_ms"`         // consecutive active-signal ms to start
-	SampleRate          int     `yaml:"sample_rate"`           // sample rate (default 44100)
-	Channels            int     `yaml:"channels"`              // number of channels (default 2)
+	SampleRate          int     `yaml:"sample_rate"`           // capture sample rate (default 44100)
+	Channels            int     `yaml:"channels"`              // capture channels (default 2)
+	FormatProfile       string  `yaml:"format_profile"`        // high, balanced, lightweight, wav
 }
 
 // SessionConfig controls recording session behavior.
@@ -90,6 +91,7 @@ func Default() Config {
 			ActivationMs:        500,
 			SampleRate:          44100,
 			Channels:            2,
+			FormatProfile:       "high",
 		},
 		Session: SessionConfig{
 			MinSessionSeconds:               5,
