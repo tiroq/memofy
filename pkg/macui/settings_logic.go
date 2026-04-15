@@ -16,6 +16,7 @@ type SettingsFields struct {
 	Threshold      string
 	ActivationMs   string
 	SilenceSeconds string
+	FormatProfile  string
 	OutputDir      string
 
 	DetectZoom                      bool
@@ -29,11 +30,16 @@ type SettingsFields struct {
 
 // FieldsFromConfig extracts UI form field values from a Config.
 func FieldsFromConfig(cfg config.Config) SettingsFields {
+	formatProfile := cfg.Audio.FormatProfile
+	if formatProfile == "" {
+		formatProfile = "high"
+	}
 	return SettingsFields{
 		Device:                          cfg.Audio.Device,
 		Threshold:                       fmt.Sprintf("%.4f", cfg.Audio.Threshold),
 		ActivationMs:                    strconv.Itoa(cfg.Audio.ActivationMs),
 		SilenceSeconds:                  strconv.Itoa(cfg.Audio.SilenceSeconds),
+		FormatProfile:                   formatProfile,
 		OutputDir:                       cfg.Output.Dir,
 		DetectZoom:                      cfg.Monitoring.DetectZoom,
 		DetectTeams:                     cfg.Monitoring.DetectTeams,
@@ -86,6 +92,17 @@ func BuildConfigFromFields(f SettingsFields, base config.Config) (config.Config,
 		return cfg, fmt.Errorf("silence_seconds must be >= 1 (got %d)", silenceSec)
 	}
 	cfg.Audio.SilenceSeconds = silenceSec
+
+	// Format profile
+	formatProfile := strings.TrimSpace(strings.ToLower(f.FormatProfile))
+	if formatProfile == "" {
+		formatProfile = "high"
+	}
+	validProfiles := map[string]bool{"high": true, "balanced": true, "lightweight": true, "wav": true}
+	if !validProfiles[formatProfile] {
+		return cfg, fmt.Errorf("format_profile must be one of: high, balanced, lightweight, wav (got %q)", f.FormatProfile)
+	}
+	cfg.Audio.FormatProfile = formatProfile
 
 	// Output
 	dir := strings.TrimSpace(f.OutputDir)

@@ -12,6 +12,7 @@ func validFields() SettingsFields {
 		Threshold:                       "0.02",
 		ActivationMs:                    "400",
 		SilenceSeconds:                  "60",
+		FormatProfile:                   "high",
 		OutputDir:                       "~/Recordings/Memofy",
 		DetectZoom:                      true,
 		DetectTeams:                     true,
@@ -143,5 +144,36 @@ func TestFormatDuration(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("FormatDuration(%f): got %s, want %s", tc.input, got, tc.want)
 		}
+	}
+}
+
+func TestBuildConfigFromFields_invalidFormatProfile(t *testing.T) {
+	f := validFields()
+	f.FormatProfile = "ultra"
+	_, err := BuildConfigFromFields(f, config.Default())
+	if err == nil {
+		t.Fatal("expected error for invalid format profile")
+	}
+}
+
+func TestBuildConfigFromFields_validFormatProfiles(t *testing.T) {
+	for _, profile := range []string{"high", "balanced", "lightweight", "wav"} {
+		f := validFields()
+		f.FormatProfile = profile
+		cfg, err := BuildConfigFromFields(f, config.Default())
+		if err != nil {
+			t.Fatalf("unexpected error for profile %q: %v", profile, err)
+		}
+		if cfg.Audio.FormatProfile != profile {
+			t.Errorf("profile: got %s, want %s", cfg.Audio.FormatProfile, profile)
+		}
+	}
+}
+
+func TestFieldsFromConfig_formatProfile(t *testing.T) {
+	cfg := config.Default()
+	fields := FieldsFromConfig(cfg)
+	if fields.FormatProfile != "high" {
+		t.Errorf("format_profile: got %s, want high", fields.FormatProfile)
 	}
 }
