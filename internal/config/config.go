@@ -18,6 +18,7 @@ type Config struct {
 	Monitoring MonitoringConfig `yaml:"monitoring"`
 	Logging    LoggingConfig    `yaml:"logging"`
 	Platform   PlatformConfig   `yaml:"platform"`
+	UI         UIConfig         `yaml:"ui"`
 }
 
 // AudioConfig controls audio capture and silence detection.
@@ -50,10 +51,11 @@ type OutputConfig struct {
 
 // MonitoringConfig controls meeting app detection.
 type MonitoringConfig struct {
-	DetectZoom     bool `yaml:"detect_zoom"`
-	DetectTeams    bool `yaml:"detect_teams"`
-	DetectMicUsage bool `yaml:"detect_mic_usage"`
-	PollIntervalMs int  `yaml:"poll_interval_ms"`
+	DetectZoom                      bool `yaml:"detect_zoom"`
+	DetectTeams                     bool `yaml:"detect_teams"`
+	DetectMicUsage                  bool `yaml:"detect_mic_usage"`
+	KeepSingleSessionWhileMicActive bool `yaml:"keep_single_session_while_mic_active"`
+	PollIntervalMs                  int  `yaml:"poll_interval_ms"`
 }
 
 // LoggingConfig controls log file output.
@@ -66,6 +68,11 @@ type LoggingConfig struct {
 type PlatformConfig struct {
 	MacOSDevice string `yaml:"macos_device"` // e.g. "BlackHole"
 	LinuxDevice string `yaml:"linux_device"` // e.g. "default" or "monitor"
+}
+
+// UIConfig controls UI behavior.
+type UIConfig struct {
+	AutoCheckUpdates bool `yaml:"auto_check_updates"`
 }
 
 // Default returns a Config with sensible defaults.
@@ -94,10 +101,11 @@ func Default() Config {
 			WriteMetadataJSON: true,
 		},
 		Monitoring: MonitoringConfig{
-			DetectZoom:     true,
-			DetectTeams:    true,
-			DetectMicUsage: true,
-			PollIntervalMs: 5000,
+			DetectZoom:                      true,
+			DetectTeams:                     true,
+			DetectMicUsage:                  true,
+			KeepSingleSessionWhileMicActive: true,
+			PollIntervalMs:                  5000,
 		},
 		Logging: LoggingConfig{
 			File:  "~/.local/share/memofy/memofy.log",
@@ -106,6 +114,9 @@ func Default() Config {
 		Platform: PlatformConfig{
 			MacOSDevice: "BlackHole",
 			LinuxDevice: "default",
+		},
+		UI: UIConfig{
+			AutoCheckUpdates: true,
 		},
 	}
 }
@@ -208,6 +219,23 @@ func (c *Config) Validate() error {
 	}
 	if c.Audio.Channels <= 0 {
 		c.Audio.Channels = 2
+	}
+	return nil
+}
+
+// Save writes the config to the given path as YAML.
+func (c *Config) Save(path string) error {
+	path = ResolvePath(path)
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("write config: %w", err)
 	}
 	return nil
 }
