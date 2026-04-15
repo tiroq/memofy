@@ -32,7 +32,23 @@ type Engine struct {
 	recordStart time.Time
 	outputDir   string
 	currentFile string
+	deviceName  string
+	lastError   string
 	monSnapshot monitor.Snapshot
+	version     string
+}
+
+// StatusSnapshot is a point-in-time view of engine state for the UI.
+type StatusSnapshot struct {
+	State          string
+	DeviceName     string
+	CurrentFile    string
+	RecordingStart time.Time
+	SilenceElapsed time.Duration
+	ZoomRunning    bool
+	TeamsRunning   bool
+	MicActive      bool
+	LastError      string
 }
 
 // New creates a new Engine with the given configuration.
@@ -40,14 +56,22 @@ func New(cfg config.Config, logger *log.Logger) *Engine {
 	if logger == nil {
 		logger = log.New(os.Stderr, "[memofy] ", log.LstdFlags)
 	}
-	dur := time.Duration(cfg.Audio.SilenceSeconds) * time.Second
+	silenceDur := time.Duration(cfg.Audio.SilenceSeconds) * time.Second
+	activationDur := time.Duration(cfg.Audio.ActivationMs) * time.Millisecond
 	return &Engine{
 		cfg:    cfg,
-		sm:     statemachine.New(dur),
+		sm:     statemachine.New(silenceDur, activationDur),
 		mon:    monitor.New(),
 		logger: logger,
 		stopCh: make(chan struct{}),
 	}
+}
+
+// SetVersion sets the app version for metadata.
+func (e *Engine) SetVersion(v string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.version = v
 }
 
 // Start initializes audio capture and begins the recording loop.
@@ -72,6 +96,7 @@ func (e *Engine) Start() error {
 	}
 	e.logger.Printf("Using device: %s (idx=%d ch=%d rate=%.0f)",
 		dev.Name, dev.Index, dev.MaxInputCh, dev.SampleRate)
+	e.deviceName = dev.Name
 	channels := e.cfg.Audio.Channels
 	if channels > dev.MaxInputCh {
 		channels = dev.MaxInputCh
@@ -152,6 +177,25 @@ func (e *Engine) Status() string {
 	return s
 }
 
+// GetStatus returns a structured status snapshot for UI consumption.
+func (e *Engine) GetStatus() StatusSnapshot {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	state := e.sm.CurrentState()
+	snap := e.mon.Current()
+	return StatusSnapshot{
+		State:          string(state),
+		DeviceName:     e.deviceName,
+		CurrentFile:    e.currentFile,
+		RecordingStart: e.recordStart,
+		SilenceElapsed: e.sm.SilenceElapsed(),
+		ZoomRunning:    snap.ZoomRunning,
+		TeamsRunning:   snap.TeamsRunning,
+		MicActive:      snap.MicActive,
+		LastError:      e.lastError,
+	}
+}
+
 func (e *Engine) loop() {
 	bufSize := e.stream.FramesPerBuffer() * e.stream.Channels()
 	buf := make([]float32, bufSize)
@@ -170,6 +214,7 @@ func (e *Engine) loop() {
 		switch action {
 		case statemachine.ActionStartRecording:
 			e.startRecording()
+			e.writeAudio(buf) // write the buffer that triggered recording
 		case statemachine.ActionContinue:
 			e.writeAudio(buf)
 		case statemachine.ActionStopRecording:
@@ -247,12 +292,16 @@ func (e *Engine) finalizeRecording() {
 		e.logger.Printf("Close WAV error: %v", err)
 	}
 	meta := metadata.Recording{
-		StartedAt:    start,
-		EndedAt:      time.Now(),
-		MicActive:    snap.MicActive,
-		ZoomRunning:  snap.ZoomRunning,
-		TeamsRunning: snap.TeamsRunning,
-		Platform:     runtime.GOOS,
+		StartedAt:           start,
+		EndedAt:             time.Now(),
+		MicActive:           snap.MicActive,
+		ZoomRunning:         snap.ZoomRunning,
+		TeamsRunning:        snap.TeamsRunning,
+		Platform:            runtime.GOOS,
+		DeviceName:          e.deviceName,
+		Threshold:           e.cfg.Audio.Threshold,
+		SilenceSplitSeconds: e.cfg.Audio.SilenceSeconds,
+		AppVersion:          e.version,
 	}
 	if err := metadata.Write(file, meta); err != nil {
 		e.logger.Printf("Metadata error: %v", err)
