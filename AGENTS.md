@@ -1,35 +1,28 @@
 # MEMOFY — PROJECT KNOWLEDGE BASE
 
-**Branch:** 002-obs-autostop | **Module:** github.com/tiroq/memofy | **Go:** 1.21
+**Module:** github.com/tiroq/memofy | **Go:** 1.21
 
 ## OVERVIEW
 
-macOS menu bar app that auto-detects and records Zoom/Teams/Google Meet meetings via OBS Studio WebSocket. Two-binary architecture: `memofy-core` (daemon) + `memofy-ui` (status bar GUI).
+Lightweight cross-platform (macOS + Linux) automatic audio recorder. Captures system sound via PortAudio when audio activity is detected. Uses silence-based splitting to create separate WAV files per session. Single binary, CLI-first architecture.
 
 ## STRUCTURE
 
 ```
 memofy/
 ├── cmd/
-│   ├── memofy-core/    # Background daemon: detection loop + OBS control
-│   └── memofy-ui/      # macOS status bar app (AppKit via darwinkit)
+│   └── memofy/         # CLI entry point: run, status, doctor, test-audio
 ├── internal/
-│   ├── statemachine/   # Core: debounced recording lifecycle FSM
-│   ├── detector/       # Meeting detection (Zoom/Teams/GoogleMeet)
-│   ├── obsws/          # OBS WebSocket v5 client + source management
-│   ├── ipc/            # File-based IPC between ui↔daemon (~/.cache/memofy/)
-│   ├── config/         # Detection rules JSON loader
+│   ├── audio/          # PortAudio capture + platform device detection
+│   ├── config/         # YAML configuration loading
+│   ├── engine/         # Main recording loop (capture → detect → record → write)
+│   ├── statemachine/   # Recording lifecycle FSM
+│   ├── metadata/       # JSON sidecar file writer
+│   ├── monitor/        # Process detection (Zoom/Teams — metadata only)
+│   ├── wav/            # WAV file writer (16-bit PCM)
 │   ├── diaglog/        # Structured NDJSON diagnostic logger
-│   ├── autoupdate/     # GitHub release checker + one-click updater
-│   ├── fileutil/       # OBS recording filename sanitizer/renamer
-│   ├── pidfile/        # Single-instance enforcement
-│   └── validation/     # OBS version compatibility checks
-├── pkg/
-│   └── macui/          # Exported macOS UI: status bar, settings window
-├── testutil/           # Shared test helpers: MockOBSServer, assertions
-├── tests/integration/  # End-to-end integration tests
-├── configs/            # default-detection-rules.json
-└── specs/              # Feature specs by ticket number (FR-xxx, T0xx)
+│   └── pidfile/        # Single-instance enforcement
+└── config.example.yaml # Example configuration
 ```
 
 ## WHERE TO LOOK
@@ -37,77 +30,77 @@ memofy/
 | Task | Location |
 |------|----------|
 | Recording start/stop logic | `internal/statemachine/statemachine.go` |
-| OBS WebSocket calls | `internal/obsws/client.go` |
-| Meeting detection signals | `internal/detector/` |
-| UI↔daemon communication | `internal/ipc/` (file-based: cmd.txt + status.json) |
-| Menu bar + settings UI | `pkg/macui/` |
-| Detection thresholds | `configs/default-detection-rules.json` |
-| Feature requirements | `specs/` (numbered FR-xxx tickets) |
+| Audio capture | `internal/audio/portaudio.go` |
+| Device detection (macOS) | `internal/audio/device_darwin.go` |
+| Device detection (Linux) | `internal/audio/device_linux.go` |
+| RMS level calculation | `internal/audio/rms.go` |
+| Main recording loop | `internal/engine/engine.go` |
+| Configuration | `internal/config/config.go` |
+| CLI commands | `cmd/memofy/main.go` |
+| WAV writing | `internal/wav/writer.go` |
+| Metadata sidecars | `internal/metadata/metadata.go` |
+| Process monitoring | `internal/monitor/monitor.go` |
 
 ## ARCHITECTURE
 
-**No HTTP server. No database.** Pure macOS desktop app.
+**No HTTP server. No database. No GUI.** CLI-first tool.
 
 ```
-memofy-ui  ──IPC──▶  memofy-core  ──WebSocket──▶  OBS Studio
-  (AppKit)          (detection loop)               (port 4455)
+memofy run  →  Engine  →  PortAudio  →  System Audio Device
+                 │
+                 ├── RMS Detection → State Machine → WAV Writer
+                 │                                      ↓
+                 └── Process Monitor (optional)    Metadata JSON
 ```
 
-- **IPC**: `~/.cache/memofy/cmd.txt` (commands) + `status.json` (state)
-- **Storage**: JSON files only — no SQLite, no Postgres
-- **Concurrency**: goroutines + sync.RWMutex; NO channels for business logic
-- **Layer flow**: `macui` → `ipc` → `statemachine` → `detector`/`obsws`
+- **Audio**: PortAudio via CGo (macOS: CoreAudio + BlackHole, Linux: PulseAudio)
+- **Storage**: WAV files + JSON sidecars
+- **Concurrency**: goroutines + sync.Mutex; no channels for business logic
+- **Config**: YAML file at `~/.config/memofy/config.yaml`
 
 ## KEY DOMAIN TYPES
 
 | Type | Package | Purpose |
 |------|---------|---------|
-| `StateMachine` | `statemachine` | Debounce + recording FSM |
-| `RecordingSession` | `statemachine` | Active session metadata (ID, origin, app) |
-| `RecordingOrigin` | `statemachine` | `manual`/`auto`/`forced` — priority hierarchy |
-| `DetectionState` | `detector` | Multi-signal meeting detection snapshot |
-| `StatusSnapshot` | `ipc` | Full system state written to status.json |
-| `Client` | `obsws` | OBS WebSocket v5 client |
-| `OperatingMode` | `ipc` | `auto`/`manual`/`paused` |
+| `Engine` | `engine` | Main recording controller |
+| `StateMachine` | `statemachine` | Recording lifecycle FSM |
+| `State` | `statemachine` | idle/detecting_sound/recording/silence_wait/finalizing |
+| `Action` | `statemachine` | none/start_recording/continue/stop_recording |
+| `Stream` | `audio` | PortAudio capture stream |
+| `DeviceInfo` | `audio` | Audio device descriptor |
+| `Config` | `config` | YAML config types |
+| `Recording` | `metadata` | JSON sidecar data |
+| `Snapshot` | `monitor` | Process detection state |
 
 ## CONVENTIONS
 
-- **No `ctx context.Context`** — not used anywhere; don't add it
+- **No `ctx context.Context`** — not used; don't add it
 - **No custom error types** — use `fmt.Errorf("...: %w", err)` wrapping
-- **Constructor pattern**: `NewFoo(cfg) *Foo` with setter injection (`SetLogger`, `SetDebounceDuration`)
-- **Ticket references** in comments: `// T014:`, `// FR-003` — keep this style
-- **Version injection**: `-ldflags "-X main.Version=..."` at build time; `Version = "dev"` as default
-- **`runtime.LockOSThread()`** required in `memofy-ui/main.go` — macOS GUI must run on OS thread
+- **Constructor pattern**: `NewFoo(cfg) *Foo`
+- **Version injection**: `-ldflags "-X main.Version=..."` at build time
+- **CGo build tags**: `//go:build darwin` / `//go:build linux` for platform code
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
-- **No gorilla/websocket direct use outside `obsws/`** — all OBS comms go through `obsws.Client`
-- **No direct file writes for IPC** — always use `ipc.WriteCommand()` / `ipc.WriteStatus()` (atomic)
-- **No status.json reads outside `ipc`** — use `ipc.ReadStatus()`
-- **No darwinkit/AppKit calls outside `pkg/macui/` and `cmd/memofy-ui/`** — GUI threading rules
+- **No direct PortAudio calls outside `internal/audio/`**
 - **No `log.Fatal` outside `main()`** — use error returns
-- **Binaries in `bin/` are committed** — do not delete; they are the release artifacts
+- **No GUI or AppKit code** — CLI only
+- **No HTTP servers or WebSocket clients**
 
 ## BUILD & DEV COMMANDS
 
 ```bash
-task build          # Build both binaries → build/
-task build-core     # Daemon only
-task build-ui       # UI only
+task build          # Build binary → build/memofy
 task test           # Unit tests
-task test-integration  # Integration tests (requires OBS running)
 task lint           # golangci-lint
-task dev-daemon     # Run core in foreground with live reload
-task dev-ui         # Run UI binary
-task logs           # Tail memofy logs
-task status         # Show current status.json
+task run            # Build and run
+task clean          # Remove build artifacts
 ```
-
-> **arm64 Go**: Taskfile prefers `/usr/local/go-arm64/bin/go` over system `go` to avoid Rosetta+darwinkit crashes on macOS 26+.
 
 ## NOTES
 
-- `specs/` contains authoritative feature specs — read before implementing anything in `statemachine` or `obsws`
-- `diaglog` uses NDJSON format; `--export-diag` subcommand bundles logs for bug reports
-- Detection uses **debounce streaks**: default 3 consecutive detections to start, 6 to stop (configurable in `configs/default-detection-rules.json`)
-- `RecordingOrigin` has priority: `manual > auto = forced` — manual stops cannot be overridden by auto
+- PortAudio requires `libportaudio` installed (brew install portaudio / apt install portaudio19-dev)
+- macOS requires BlackHole virtual audio device for system audio capture
+- Linux uses PulseAudio/PipeWire monitor source for system audio capture
+- Process detection (Zoom/Teams) is best-effort metadata enrichment only
+- State machine uses silence threshold (default 60s) for file splitting
