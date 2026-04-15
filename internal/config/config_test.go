@@ -83,6 +83,10 @@ func TestLoadOrDefaultMissing(t *testing.T) {
 	if cfg.Audio.Threshold != 0.02 {
 		t.Errorf("threshold: got %f, want 0.02", cfg.Audio.Threshold)
 	}
+	// Output.Dir must have ~ expanded, not raw
+	if len(cfg.Output.Dir) > 0 && cfg.Output.Dir[0] == '~' {
+		t.Errorf("Output.Dir not resolved: got %s", cfg.Output.Dir)
+	}
 }
 
 func TestResolvePath(t *testing.T) {

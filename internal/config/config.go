@@ -135,7 +135,10 @@ func LoadOrDefault() Config {
 	path := DefaultConfigPath()
 	cfg, err := Load(path)
 	if err != nil {
-		return Default()
+		d := Default()
+		d.Output.Dir = ResolvePath(d.Output.Dir)
+		d.Output.Directory = d.Output.Dir
+		return d
 	}
 	return cfg
 }
