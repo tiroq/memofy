@@ -10,38 +10,26 @@ import (
 	"time"
 )
 
-// ── Component labels (FR-002) ────────────────────────────────────────────────
+// ── Component labels ─────────────────────────────────────────────────────────
 
 const (
-	ComponentOBSClient    = "obs-ws-client"
+	ComponentEngine       = "engine"
 	ComponentStateMachine = "state-machine"
-	ComponentAutoDetector = "auto-detector"
-	ComponentReconnect    = "reconnect-handler"
+	ComponentAudioCapture = "audio-capture"
 	ComponentDiagExport   = "diag-export"
-	ComponentMemofyCore   = "memofy-core"
-	// T035: ASR component label. FR-013
-	ComponentASR = "asr"
+	ComponentMemofy       = "memofy"
 )
 
-// ── Event names (FR-001 / FR-003 / FR-011 / FR-012 / FR-013) ─────────────────
+// ── Event names ──────────────────────────────────────────────────────────────
 
 const (
-	EventWSSend                = "ws_send"
-	EventWSRecv                = "ws_recv"
-	EventWSConnect             = "ws_connect"
-	EventWSDisconnect          = "ws_disconnect"
-	EventWSReconnectAttempt    = "ws_reconnect_attempt"
-	EventWSReconnectSuccess    = "ws_reconnect_success"
-	EventWSReconnectFailed     = "ws_reconnect_failed"
-	EventMultiClientWarning    = "multi_client_warning"
-	EventRecordingStart        = "recording_start"
-	EventRecordingStop         = "recording_stop"
-	EventRecordingStopRejected = "recording_stop_rejected"
-	// T035: ASR lifecycle events. FR-013
-	EventASRHealthCheck        = "asr_health_check"
-	EventASRTranscribeStart    = "asr_transcribe_start"
-	EventASRTranscribeComplete = "asr_transcribe_complete"
-	EventASRTranscribeFailed   = "asr_transcribe_failed"
+	EventRecordingStart = "recording_start"
+	EventRecordingStop  = "recording_stop"
+	EventSoundDetected  = "sound_detected"
+	EventSilenceStart   = "silence_start"
+	EventSilenceEnd     = "silence_end"
+	EventDeviceFound    = "device_found"
+	EventDeviceError    = "device_error"
 )
 
 // ── LogEntry ─────────────────────────────────────────────────────────────────

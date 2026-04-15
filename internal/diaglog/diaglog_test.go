@@ -19,9 +19,9 @@ func TestLogWritesNDJSON(t *testing.T) {
 	defer func() { _ = l.Close() }()
 
 	entries := []LogEntry{
-		{Component: ComponentOBSClient, Event: EventWSConnect},
-		{Component: ComponentStateMachine, Event: EventRecordingStart, Reason: "manual", SessionID: "abc123"},
-		{Component: ComponentAutoDetector, Event: EventRecordingStop},
+		{Component: ComponentEngine, Event: EventSoundDetected},
+		{Component: ComponentStateMachine, Event: EventRecordingStart, Reason: "auto", SessionID: "abc123"},
+		{Component: ComponentAudioCapture, Event: EventRecordingStop},
 	}
 	for _, e := range entries {
 		l.Log(e)
@@ -48,7 +48,7 @@ func TestLogWritesNDJSON(t *testing.T) {
 	if len(lines) != len(entries) {
 		t.Fatalf("want %d lines, got %d", len(entries), len(lines))
 	}
-	if lines[0]["component"] != ComponentOBSClient {
+	if lines[0]["component"] != ComponentEngine {
 		t.Errorf("component mismatch: %v", lines[0]["component"])
 	}
 	if lines[1]["session_id"] != "abc123" {
@@ -127,7 +127,7 @@ func TestNoOpWhenDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	l.Log(LogEntry{Component: ComponentOBSClient, Event: EventWSConnect})
+	l.Log(LogEntry{Component: ComponentEngine, Event: EventSoundDetected})
 	_ = l.Close()
 
 	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
