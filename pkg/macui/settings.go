@@ -28,10 +28,10 @@ type SettingsWindow struct {
 	outputDir appkit.TextField
 
 	// Monitoring tab controls
-	detectZoom      appkit.Button
-	detectTeams     appkit.Button
-	detectMicUsage  appkit.Button
-	keepSingleMic   appkit.Button
+	detectZoom     appkit.Button
+	detectTeams    appkit.Button
+	detectMicUsage appkit.Button
+	keepSingleMic  appkit.Button
 
 	// General tab controls
 	autoCheckUpdates appkit.Button
