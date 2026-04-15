@@ -13,12 +13,16 @@ func TestWrite(t *testing.T) {
 	os.WriteFile(wavPath, []byte("fake"), 0644)
 
 	meta := Recording{
-		StartedAt:    time.Date(2026, 2, 12, 14, 30, 15, 0, time.UTC),
-		EndedAt:      time.Date(2026, 2, 12, 15, 0, 15, 0, time.UTC),
-		MicActive:    true,
-		ZoomRunning:  true,
-		TeamsRunning: false,
-		Platform:     "darwin",
+		StartedAt:           time.Date(2026, 2, 12, 14, 30, 15, 0, time.UTC),
+		EndedAt:             time.Date(2026, 2, 12, 15, 0, 15, 0, time.UTC),
+		MicActive:           true,
+		ZoomRunning:         true,
+		TeamsRunning:        false,
+		Platform:            "darwin",
+		DeviceName:          "BlackHole 2ch",
+		Threshold:           0.02,
+		SilenceSplitSeconds: 60,
+		AppVersion:          "0.1.0",
 	}
 
 	if err := Write(wavPath, meta); err != nil {
@@ -47,5 +51,14 @@ func TestWrite(t *testing.T) {
 	}
 	if got.Platform != "darwin" {
 		t.Errorf("platform: got %s, want darwin", got.Platform)
+	}
+	if got.DeviceName != "BlackHole 2ch" {
+		t.Errorf("device_name: got %s, want BlackHole 2ch", got.DeviceName)
+	}
+	if got.SessionID == "" {
+		t.Error("session_id should not be empty")
+	}
+	if got.AppVersion != "0.1.0" {
+		t.Errorf("app_version: got %s, want 0.1.0", got.AppVersion)
 	}
 }
