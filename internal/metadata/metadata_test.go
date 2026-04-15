@@ -87,3 +87,68 @@ func TestWrite(t *testing.T) {
 		t.Errorf("version: got %s, want 0.2.0", got.AppVersion)
 	}
 }
+
+func TestWriteAutocomputedFields(t *testing.T) {
+	dir := t.TempDir()
+	wavPath := dir + "/test_auto.wav"
+	os.WriteFile(wavPath, []byte("fake"), 0644)
+
+	start := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 1, 1, 10, 5, 0, 0, time.UTC)
+
+	// No duration, no platform, no session_id, no threshold — should be autocomputed
+	meta := Recording{
+		StartedAt: start,
+		EndedAt:   end,
+	}
+
+	if err := Write(wavPath, meta); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	jsonPath := dir + "/test_auto.json"
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("read json: %v", err)
+	}
+
+	var got Recording
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if got.DurationSecs != 300 {
+		t.Errorf("duration: got %f, want 300", got.DurationSecs)
+	}
+	if got.Platform == "" {
+		t.Error("platform should be autocomputed")
+	}
+	if got.SessionID == "" {
+		t.Error("session_id should be autocomputed")
+	}
+	if got.Threshold == 0 {
+		t.Error("threshold should be autocomputed from default")
+	}
+}
+
+func TestWriteM4AExtension(t *testing.T) {
+	dir := t.TempDir()
+	m4aPath := dir + "/recording.m4a"
+	os.WriteFile(m4aPath, []byte("fake"), 0644)
+
+	meta := Recording{
+		StartedAt: time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC),
+		EndedAt:   time.Date(2026, 1, 1, 10, 1, 0, 0, time.UTC),
+		Container: "m4a",
+	}
+
+	if err := Write(m4aPath, meta); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	// Should create .json alongside .m4a
+	jsonPath := dir + "/recording.json"
+	if _, err := os.Stat(jsonPath); os.IsNotExist(err) {
+		t.Error("expected .json file alongside .m4a")
+	}
+}
