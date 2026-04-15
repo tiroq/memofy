@@ -1,370 +1,216 @@
+// Package statemachine implements the audio recording lifecycle FSM.
+//
+// States:
+//
+//	idle            → no audio activity detected
+//	detecting_sound → sound detected, waiting to confirm before recording
+//	recording       → actively recording audio to file
+//	silence_wait    → silence detected during recording, waiting for threshold
+//	finalizing      → finishing the current recording file
 package statemachine
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
-
-	"github.com/tiroq/memofy/internal/config"
-	"github.com/tiroq/memofy/internal/detector"
-	"github.com/tiroq/memofy/internal/diaglog"
-	"github.com/tiroq/memofy/internal/ipc"
 )
 
-// ── RecordingOrigin (T013) ────────────────────────────────────────────────────
-
-// RecordingOrigin encodes who initiated (or requested to stop) a recording.
-// Priority order (highest first): manual > auto > forced.
-type RecordingOrigin string
+// State represents the current phase of the recording lifecycle.
+type State string
 
 const (
-	OriginUnknown RecordingOrigin = ""
-	OriginManual  RecordingOrigin = "manual" // user action via UI
-	OriginAuto    RecordingOrigin = "auto"   // detection threshold crossed
-	OriginForced  RecordingOrigin = "forced" // programmatic / test path
+	StateIdle           State = "idle"
+	StateDetectingSound State = "detecting_sound"
+	StateRecording      State = "recording"
+	StateSilenceWait    State = "silence_wait"
+	StateFinalizing     State = "finalizing"
 )
 
-// priorityOf returns a numeric priority for origin comparisons.
-func priorityOf(o RecordingOrigin) int {
-	switch o {
-	case OriginManual:
-		return 2
-	case OriginAuto:
-		return 1
-	case OriginForced:
-		return 1 // same tier as auto (test & programmatic path)
+// Event represents an input signal to the state machine.
+type Event int
+
+const (
+	EventSoundDetected Event = iota
+	EventSilenceDetected
+	EventSilenceThresholdExceeded
+	EventRecordingStarted
+	EventRecordingFinalized
+)
+
+// String returns a human-readable name for the event.
+func (e Event) String() string {
+	switch e {
+	case EventSoundDetected:
+		return "sound_detected"
+	case EventSilenceDetected:
+		return "silence_detected"
+	case EventSilenceThresholdExceeded:
+		return "silence_threshold_exceeded"
+	case EventRecordingStarted:
+		return "recording_started"
+	case EventRecordingFinalized:
+		return "recording_finalized"
 	default:
-		return 1
+		return fmt.Sprintf("unknown(%d)", int(e))
 	}
 }
 
-// ── RecordingSession (T013) ───────────────────────────────────────────────────
-
-// RecordingSession holds metadata about the active recording interval.
-type RecordingSession struct {
-	SessionID string          // 16-char hex, crypto/rand
-	Origin    RecordingOrigin // who started it
-	App       detector.DetectedApp
-	StartedAt time.Time
-}
-
-// ── StopRequest (T013) ────────────────────────────────────────────────────────
-
-// StopRequest carries full attribution for a recording stop signal (FR-003).
-type StopRequest struct {
-	RequestOrigin RecordingOrigin // who is requesting the stop
-	Reason        string          // machine-readable reason code
-	Component     string          // source component label
-}
-
-// ── StateMachine ─────────────────────────────────────────────────────────────
-
-// StateMachine manages recording state with debounced detection.
+// StateMachine manages the recording lifecycle based on audio activity.
 type StateMachine struct {
-	config          *config.DetectionConfig
-	currentMode     ipc.OperatingMode
-	recording       bool
-	recordingApp    detector.DetectedApp
+	mu    sync.RWMutex
+	state State
+
+	// Timing
+	silenceStart    time.Time
 	recordingStart  time.Time
-	detectionStreak int
-	absenceStreak   int
+	silenceDuration time.Duration // configurable silence threshold
 
-	// Session authority fields (T014)
-	session     *RecordingSession
-	debounceDur time.Duration
-	logger      *diaglog.Logger
+	// Callbacks
+	onStateChange func(from, to State)
 }
 
-// NewStateMachine creates a state machine with given config.
-func NewStateMachine(cfg *config.DetectionConfig) *StateMachine {
+// New creates a state machine with the given silence threshold duration.
+func New(silenceThreshold time.Duration) *StateMachine {
 	return &StateMachine{
-		config:      cfg,
-		currentMode: ipc.ModeAuto,
-		recording:   false,
-		debounceDur: 5 * time.Second,
+		state:           StateIdle,
+		silenceDuration: silenceThreshold,
 	}
 }
 
-// SetLogger injects a diaglog.Logger for structured event tracing (T014).
-func (sm *StateMachine) SetLogger(l *diaglog.Logger) {
-	sm.logger = l
+// SetOnStateChange sets a callback invoked on every state transition.
+func (sm *StateMachine) SetOnStateChange(fn func(from, to State)) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.onStateChange = fn
 }
 
-// SetDebounceDuration overrides the default 5-second session-start race guard (T014).
-func (sm *StateMachine) SetDebounceDuration(d time.Duration) {
-	sm.debounceDur = d
+// State returns the current state.
+func (sm *StateMachine) CurrentState() State {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.state
 }
 
-// newSessionID generates a 16-character hex session ID using crypto/rand.
-func newSessionID() string {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return "0000000000000000"
-	}
-	return hex.EncodeToString(b)
+// RecordingStart returns when the current recording started (zero if not recording).
+func (sm *StateMachine) RecordingStart() time.Time {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.recordingStart
 }
 
-// ── ProcessDetection ─────────────────────────────────────────────────────────
-
-// ProcessDetection evaluates detection state and returns action to take.
-// Returns: shouldStartRecording, shouldStopRecording, newApp
-func (sm *StateMachine) ProcessDetection(state detector.DetectionState) (bool, bool, detector.DetectedApp) {
-	if sm.currentMode == ipc.ModePaused {
-		return false, false, detector.AppNone
-	}
-
-	if sm.currentMode == ipc.ModeManual {
-		if state.MeetingDetected {
-			sm.absenceStreak = 0
-			sm.detectionStreak++
-		} else {
-			sm.detectionStreak = 0
-			sm.absenceStreak++
-		}
-		return false, false, detector.AppNone
-	}
-
-	if state.MeetingDetected {
-		sm.absenceStreak = 0
-		sm.detectionStreak++
-
-		if !sm.recording && sm.detectionStreak >= sm.config.StartThreshold {
-			return true, false, state.DetectedApp
-		}
-		return false, false, detector.AppNone
-	}
-
-	sm.detectionStreak = 0
-	sm.absenceStreak++
-
-	if sm.recording && sm.absenceStreak >= sm.config.StopThreshold {
-		return false, true, detector.AppNone
-	}
-
-	return false, false, detector.AppNone
-}
-
-// ── StartRecording / StopRecording / ForceStart / ForceStop ──────────────────
-
-// StartRecording updates state for an auto-detected recording start (T014).
-func (sm *StateMachine) StartRecording(app detector.DetectedApp) {
-	sm.recording = true
-	sm.recordingApp = app
-	sm.recordingStart = time.Now()
-	sm.detectionStreak = 0
-	sm.absenceStreak = 0
-
-	sid := newSessionID()
-	sm.session = &RecordingSession{
-		SessionID: sid,
-		Origin:    OriginAuto,
-		App:       app,
-		StartedAt: sm.recordingStart,
-	}
-	if sm.logger != nil {
-		sm.logger.Log(diaglog.LogEntry{
-			Component: diaglog.ComponentStateMachine,
-			Event:     diaglog.EventRecordingStart,
-			SessionID: sid,
-			Payload:   map[string]interface{}{"origin": "auto", "app": string(app)},
-		})
-	}
-}
-
-// CanStop reports whether req would be accepted by the authority hierarchy and
-// debounce guard without mutating any state. Callers can use this to perform
-// the authority check before issuing the OBS StopRecord call (FR-007/FR-008).
-func (sm *StateMachine) CanStop(req StopRequest) bool {
-	if sm.session != nil && sm.session.Origin == OriginManual {
-		if priorityOf(req.RequestOrigin) < priorityOf(OriginManual) {
-			return false
-		}
-		if req.RequestOrigin != OriginManual && time.Since(sm.session.StartedAt) < sm.debounceDur {
-			return false
-		}
-	}
-	return true
-}
-
-// StopRecording implements the authority hierarchy (T015 / FR-007 / FR-008).
-// Returns true if the stop was executed, false if it was rejected.
-func (sm *StateMachine) StopRecording(req StopRequest) bool {
-	if sm.session != nil && sm.session.Origin == OriginManual {
-		// Reject any stop from a lower-priority origin (FR-007).
-		if priorityOf(req.RequestOrigin) < priorityOf(OriginManual) {
-			if sm.logger != nil {
-				sm.logger.Log(diaglog.LogEntry{
-					Component: diaglog.ComponentStateMachine,
-					Event:     diaglog.EventRecordingStopRejected,
-					SessionID: sm.session.SessionID,
-					Reason:    "manual_mode_override",
-					Payload: map[string]interface{}{
-						"requested_by": string(req.RequestOrigin),
-						"component":    req.Component,
-						"reason":       req.Reason,
-					},
-				})
-			}
-			return false
-		}
-	}
-
-	// Debounce guard: for manual-origin sessions, reject non-manual stops within
-	// the race window (FR-008). Auto sessions are not protected by this guard.
-	// NOTE: explicit user stops always succeed immediately.
-	if sm.session != nil && sm.session.Origin == OriginManual && req.RequestOrigin != OriginManual && time.Since(sm.session.StartedAt) < sm.debounceDur {
-		if sm.logger != nil {
-			sm.logger.Log(diaglog.LogEntry{
-				Component: diaglog.ComponentStateMachine,
-				Event:     diaglog.EventRecordingStopRejected,
-				SessionID: sm.session.SessionID,
-				Reason:    "debounce_guard",
-				Payload: map[string]interface{}{
-					"requested_by": string(req.RequestOrigin),
-					"component":    req.Component,
-					"reason":       "debounce_guard",
-				},
-			})
-		}
-		return false
-	}
-
-	// Stop allowed.
-	sid := ""
-	if sm.session != nil {
-		sid = sm.session.SessionID
-	}
-	sm.recording = false
-	sm.recordingApp = detector.AppNone
-	sm.recordingStart = time.Time{}
-	sm.detectionStreak = 0
-	sm.absenceStreak = 0
-	sm.session = nil
-
-	if sm.logger != nil {
-		sm.logger.Log(diaglog.LogEntry{
-			Component: diaglog.ComponentStateMachine,
-			Event:     diaglog.EventRecordingStop,
-			SessionID: sid,
-			Reason:    req.Reason,
-			Payload:   map[string]interface{}{"requested_by": string(req.RequestOrigin), "component": req.Component},
-		})
-	}
-	return true
-}
-
-// ForceStart manually starts recording (from command interface, T014).
-func (sm *StateMachine) ForceStart(app detector.DetectedApp) error {
-	if sm.recording {
-		return fmt.Errorf("already recording")
-	}
-	now := time.Now()
-	sid := newSessionID()
-	sm.recording = true
-	sm.recordingApp = app
-	sm.recordingStart = now
-	sm.detectionStreak = 0
-	sm.absenceStreak = 0
-	sm.session = &RecordingSession{
-		SessionID: sid,
-		Origin:    OriginManual,
-		App:       app,
-		StartedAt: now,
-	}
-	if sm.logger != nil {
-		sm.logger.Log(diaglog.LogEntry{
-			Component: diaglog.ComponentStateMachine,
-			Event:     diaglog.EventRecordingStart,
-			SessionID: sid,
-			Payload:   map[string]interface{}{"origin": "manual", "app": string(app)},
-		})
-	}
-	// In manual mode keep manual mode; otherwise switch to paused to prevent auto-stop.
-	if sm.currentMode != ipc.ModeManual {
-		sm.currentMode = ipc.ModePaused
-	}
-	return nil
-}
-
-// ForceStop manually stops recording (from command interface).
-func (sm *StateMachine) ForceStop() error {
-	if !sm.recording {
-		return fmt.Errorf("not recording")
-	}
-	sm.StopRecording(StopRequest{
-		RequestOrigin: OriginManual,
-		Reason:        "user_stop",
-		Component:     diaglog.ComponentMemofyCore,
-	})
-	return nil
-}
-
-// ── Mode management ───────────────────────────────────────────────────────────
-
-// ToggleMode switches between auto and paused modes.
-func (sm *StateMachine) ToggleMode() {
-	if sm.currentMode == ipc.ModeAuto {
-		sm.currentMode = ipc.ModePaused
-	} else {
-		sm.currentMode = ipc.ModeAuto
-	}
-}
-
-// SetMode explicitly sets the operating mode.
-func (sm *StateMachine) SetMode(mode ipc.OperatingMode) {
-	sm.currentMode = mode
-}
-
-// ── Read-only accessors ───────────────────────────────────────────────────────
-
-// IsRecording returns current recording status.
-func (sm *StateMachine) IsRecording() bool {
-	return sm.recording
-}
-
-// CurrentMode returns current operating mode.
-func (sm *StateMachine) CurrentMode() ipc.OperatingMode {
-	return sm.currentMode
-}
-
-// GetDetectionStreak returns current detection streak count.
-func (sm *StateMachine) GetDetectionStreak() int {
-	return sm.detectionStreak
-}
-
-// GetAbsenceStreak returns current absence streak count.
-func (sm *StateMachine) GetAbsenceStreak() int {
-	return sm.absenceStreak
-}
-
-// RecordingDuration returns how long current recording has been active.
-func (sm *StateMachine) RecordingDuration() time.Duration {
-	if !sm.recording {
+// SilenceElapsed returns how long silence has been detected during silence_wait.
+func (sm *StateMachine) SilenceElapsed() time.Duration {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	if sm.state != StateSilenceWait || sm.silenceStart.IsZero() {
 		return 0
 	}
-	return time.Since(sm.recordingStart)
+	return time.Since(sm.silenceStart)
 }
 
-// RecordingApp returns the app being recorded.
-func (sm *StateMachine) RecordingApp() detector.DetectedApp {
-	return sm.recordingApp
-}
+// ProcessAudio is the main entry point. Call it with each audio buffer's RMS level.
+// Returns the action the caller should take.
+type Action int
 
-// SessionOrigin returns the origin of the active recording session, or
-// OriginUnknown if no session is active (T017).
-func (sm *StateMachine) SessionOrigin() RecordingOrigin {
-	if sm.session == nil {
-		return OriginUnknown
+const (
+	ActionNone           Action = iota
+	ActionStartRecording        // begin a new WAV file and start writing
+	ActionStopRecording         // finalize current WAV file
+	ActionContinue              // keep writing to current file
+)
+
+// String returns a human-readable name for the action.
+func (a Action) String() string {
+	switch a {
+	case ActionNone:
+		return "none"
+	case ActionStartRecording:
+		return "start_recording"
+	case ActionStopRecording:
+		return "stop_recording"
+	case ActionContinue:
+		return "continue"
+	default:
+		return fmt.Sprintf("unknown(%d)", int(a))
 	}
-	return sm.session.Origin
 }
 
-// SessionID returns the session ID of the active recording, or empty string
-// if no session is active (T017).
-func (sm *StateMachine) SessionID() string {
-	if sm.session == nil {
-		return ""
+// ProcessAudio evaluates the current RMS level and returns an action.
+// threshold is the RMS level above which audio is considered "sound".
+func (sm *StateMachine) ProcessAudio(rmsLevel float64, threshold float64) Action {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	hasSound := rmsLevel >= threshold
+
+	switch sm.state {
+	case StateIdle:
+		if hasSound {
+			sm.transition(StateDetectingSound)
+			return ActionStartRecording
+		}
+		return ActionNone
+
+	case StateDetectingSound:
+		// This state is entered momentarily; recording should start immediately.
+		if hasSound {
+			sm.recordingStart = time.Now()
+			sm.transition(StateRecording)
+			return ActionContinue
+		}
+		// Sound disappeared before recording started — go back to idle.
+		sm.transition(StateIdle)
+		return ActionNone
+
+	case StateRecording:
+		if hasSound {
+			return ActionContinue
+		}
+		// Silence detected — enter silence_wait
+		sm.silenceStart = time.Now()
+		sm.transition(StateSilenceWait)
+		return ActionContinue // keep recording during silence_wait
+
+	case StateSilenceWait:
+		if hasSound {
+			// Sound resumed — back to recording
+			sm.silenceStart = time.Time{}
+			sm.transition(StateRecording)
+			return ActionContinue
+		}
+		// Still silent — check threshold
+		if time.Since(sm.silenceStart) >= sm.silenceDuration {
+			sm.transition(StateFinalizing)
+			return ActionStopRecording
+		}
+		return ActionContinue // keep recording during brief silence
+
+	case StateFinalizing:
+		// Recording is being finalized. Once done, caller should call Reset().
+		return ActionNone
+
+	default:
+		return ActionNone
 	}
-	return sm.session.SessionID
+}
+
+// Reset returns the state machine to idle. Call after finalizing a recording.
+func (sm *StateMachine) Reset() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.transition(StateIdle)
+	sm.recordingStart = time.Time{}
+	sm.silenceStart = time.Time{}
+}
+
+// transition changes state and fires the callback.
+func (sm *StateMachine) transition(to State) {
+	from := sm.state
+	if from == to {
+		return
+	}
+	sm.state = to
+	if sm.onStateChange != nil {
+		sm.onStateChange(from, to)
+	}
 }
