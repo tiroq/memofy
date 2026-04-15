@@ -305,6 +305,7 @@ func (e *Engine) finalizeRecording() {
 	file := e.currentFile
 	start := e.recordStart
 	snap := e.monSnapshot
+	spec := e.formatSpec
 	e.writer = nil
 	e.currentFile = ""
 	e.mu.Unlock()
@@ -314,6 +315,20 @@ func (e *Engine) finalizeRecording() {
 	if err := w.Close(); err != nil {
 		e.logger.Printf("Close WAV error: %v", err)
 	}
+
+	finalFile := file
+
+	// Convert to M4A if the format profile requires it.
+	if spec.Container == "m4a" {
+		converted, err := audio.ConvertToM4A(file, spec)
+		if err != nil {
+			e.logger.Printf("M4A conversion failed, keeping WAV: %v", err)
+		} else {
+			finalFile = converted
+			e.logger.Printf("Converted to M4A: %s", filepath.Base(converted))
+		}
+	}
+
 	meta := metadata.Recording{
 		StartedAt:           start,
 		EndedAt:             time.Now(),
@@ -322,15 +337,22 @@ func (e *Engine) finalizeRecording() {
 		TeamsRunning:        snap.TeamsRunning,
 		Platform:            runtime.GOOS,
 		DeviceName:          e.deviceName,
+		FormatProfile:       string(spec.Profile),
+		Container:           spec.Container,
+		Codec:               spec.Codec,
+		SampleRate:          spec.SampleRate,
+		Channels:            spec.Channels,
+		BitrateKbps:         spec.BitrateKbps,
 		Threshold:           e.cfg.Audio.Threshold,
 		SilenceSplitSeconds: e.cfg.Audio.SilenceSeconds,
+		SplitReason:         "silence_threshold",
 		AppVersion:          e.version,
 	}
-	if err := metadata.Write(file, meta); err != nil {
+	if err := metadata.Write(finalFile, meta); err != nil {
 		e.logger.Printf("Metadata error: %v", err)
 	}
 	dur := time.Since(start).Truncate(time.Second)
-	e.logger.Printf("Finalized: %s (%s)", filepath.Base(file), dur)
+	e.logger.Printf("Finalized: %s (%s)", filepath.Base(finalFile), dur)
 }
 
 func (e *Engine) findDevice() (*audio.DeviceInfo, error) {
