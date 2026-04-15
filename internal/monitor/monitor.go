@@ -13,6 +13,7 @@ import (
 type Snapshot struct {
 	ZoomRunning  bool
 	TeamsRunning bool
+	MeetRunning  bool
 	MicActive    bool // best-effort; may not be accurate
 }
 
@@ -37,6 +38,7 @@ func (m *Monitor) Poll() Snapshot {
 	m.snapshot = Snapshot{
 		ZoomRunning:  containsAny(procs, "zoom.us", "zoom", "CptHost"),
 		TeamsRunning: containsAny(procs, "Microsoft Teams", "teams"),
+		MeetRunning:  containsAny(procs, "Google Meet", "meet"),
 		MicActive:    false, // best-effort detection below
 	}
 
