@@ -1,9 +1,10 @@
+//go:build darwin
+
 package macui
 
 import (
 	"fmt"
 	"log"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -14,370 +15,204 @@ import (
 	"github.com/progrium/darwinkit/objc"
 	"github.com/tiroq/memofy/internal/autoupdate"
 	"github.com/tiroq/memofy/internal/config"
-	"github.com/tiroq/memofy/internal/ipc"
+	"github.com/tiroq/memofy/internal/engine"
 )
 
-// StatusBarApp represents the menu bar application
-// Implements status monitoring, menu display, and command interface
+// StatusBarApp represents the macOS menu bar application.
 type StatusBarApp struct {
-	statusItem         appkit.StatusItem
-	menu               appkit.Menu
-	currentStatus      *ipc.StatusSnapshot
-	lastErrorShown     string
-	lastErrorTime      time.Time
-	settingsWindow     *SettingsWindow
-	aboutWindow        *AboutWindow
-	previousRecording  bool
-	recordingStartTime time.Time
-	updateChecker      *autoupdate.UpdateChecker
-	// Timer-based UI update mechanism (safe for main-thread execution)
-	pendingUpdate bool
-	pendingStatus *ipc.StatusSnapshot
-	// pendingMode holds a mode the user just selected; kept until the core
-	// confirms it so status-poll updates don't immediately revert the icon.
-	pendingMode ipc.OperatingMode
+	statusItem     appkit.StatusItem
+	menu           appkit.Menu
+	eng            *engine.Engine
+	cfg            config.Config
+	version        string
+	settingsWindow *SettingsWindow
+	aboutWindow    *AboutWindow
+	updateChecker  *autoupdate.UpdateChecker
+	lastStatus     engine.StatusSnapshot
+	wasRecording   bool
+	recordStart    time.Time
 }
 
-// GetCurrentStatus returns the current status snapshot (for testing)
-func (app *StatusBarApp) GetCurrentStatus() *ipc.StatusSnapshot {
-	return app.currentStatus
-}
-
-// NewStatusBarApp creates and initializes the menu bar application
-func NewStatusBarApp(version string) *StatusBarApp {
-	log.Println("✓ StatusBarApp initialized")
-	log.Println("  Control commands:")
-	log.Println("    echo 'start' > ~/.cache/memofy/cmd.txt   (force start)")
-	log.Println("    echo 'stop' > ~/.cache/memofy/cmd.txt    (force stop)")
-	log.Println("    echo 'auto' > ~/.cache/memofy/cmd.txt    (auto mode)")
-	log.Println("    echo 'pause' > ~/.cache/memofy/cmd.txt   (pause)")
-	log.Println("  Status: cat ~/.cache/memofy/status.json")
-
-	installDir := filepath.Join(os.Getenv("HOME"), ".local", "bin")
-	log.Printf("  Current version: %s", version)
-	checker := autoupdate.NewUpdateChecker("tiroq", "memofy", version, installDir)
-
-	// Set release channel based on config
-	cfg, err := config.LoadDetectionRules()
-	if err != nil {
-		log.Printf("Warning: Could not load config for release channel setting: %v", err)
-		checker.SetChannel(autoupdate.ChannelStable) // Default to stable
-	} else if cfg.AllowDevUpdates {
-		checker.SetChannel(autoupdate.ChannelPrerelease) // Allow pre-releases
-		log.Println("✓ Release channel set to: prerelease (dev updates enabled)")
-	} else {
-		checker.SetChannel(autoupdate.ChannelStable) // Default to stable
-		log.Println("✓ Release channel set to: stable")
-	}
+// NewStatusBarApp creates and initializes the menu bar application.
+func NewStatusBarApp(version string, eng *engine.Engine, cfg config.Config) *StatusBarApp {
+	checker := autoupdate.NewUpdateChecker("tiroq", "memofy", version, "")
+	checker.SetChannel(autoupdate.ChannelStable)
 
 	app := &StatusBarApp{
-		settingsWindow: NewSettingsWindow(),
-		updateChecker:  checker,
+		eng:           eng,
+		cfg:           cfg,
+		version:       version,
+		updateChecker: checker,
 	}
 
-	// Create About window
+	app.settingsWindow = NewSettingsWindow(cfg)
 	app.aboutWindow = NewAboutWindow(version, checker)
-
-	// Create status bar item
 	app.createStatusBar()
 
-	// Register global keyboard shortcuts
-	app.RegisterHotkeys()
-
+	log.Printf("Menu bar app initialized (version %s)", version)
 	return app
 }
 
-// createStatusBar initializes the menu bar icon and menu
+// createStatusBar initializes the menu bar icon and menu.
 func (app *StatusBarApp) createStatusBar() {
-	// Create status item in system status bar
 	statusBar := appkit.StatusBar_SystemStatusBar()
 	app.statusItem = statusBar.StatusItemWithLength(appkit.VariableStatusItemLength)
 
-	// Set initial button state with logo icon (gray = idle)
 	button := app.statusItem.Button()
-	button.SetTitle("") // clear text; image is used instead
+	button.SetTitle("")
 	button.SetImage(tintedMenubarIcon(appkit.Color_SystemGrayColor()))
 
-	// Create menu
 	app.menu = appkit.NewMenu()
 	app.menu.SetAutoenablesItems(false)
-
-	// Build menu items
 	app.rebuildMenu()
-
-	// Attach menu to status item
 	app.statusItem.SetMenu(app.menu)
-
-	log.Println("✓ Menu bar icon created")
 }
 
-// UpdateStatus refreshes the UI based on current status
-func (app *StatusBarApp) UpdateStatus(status *ipc.StatusSnapshot) {
-	// CRITICAL: All GUI updates must happen on main thread for macOS AppKit
-	// Schedule the actual update on the main dispatch queue
-	if status == nil {
-		return
-	}
-
-	// Queue the update - currentStatus will be set when ApplyPendingUpdate() runs on main thread
-	app.performUpdateOnMainThread(status)
-}
-
-// performUpdateOnMainThread handles status updates from background threads
-// This runs on background thread and just queues the update for main thread processing
-func (app *StatusBarApp) performUpdateOnMainThread(status *ipc.StatusSnapshot) {
-	if status == nil {
-		return
-	}
-
-	// Queue the update to be processed by the main thread timer
-	app.pendingUpdate = true
-	app.pendingStatus = status
-	// Uncomment for debugging: log.Printf("[DEBUG] UI update queued: mode=%s", status.Mode)
-}
-
-// HasPendingUpdate returns true if there's a UI update waiting to be applied
-func (app *StatusBarApp) HasPendingUpdate() bool {
-	return app.pendingUpdate
-}
-
-// ApplyPendingUpdate applies queued UI updates - MUST be called from main thread only
-func (app *StatusBarApp) ApplyPendingUpdate() {
-	if !app.pendingUpdate || app.pendingStatus == nil {
-		return
-	}
-
-	status := app.pendingStatus
-	app.pendingUpdate = false
-
-	if app.currentStatus == nil {
-		// First update - show initial notification
-		app.currentStatus = status
-		app.updateMenuBarIcon()
-		app.rebuildMenu()
-		if err := SendNotification("Memofy", "Monitoring Active", "Automatic meeting detector started"); err != nil {
-			log.Printf("Warning: failed to send notification: %v", err)
-		}
-		return
-	}
-
-	// Snapshot previous state for change detection
-	oldMode := app.currentStatus.Mode
-	oldOBS := app.currentStatus.OBSConnected
-	oldError := app.currentStatus.LastError
-	oldRecording := app.previousRecording
-
-	app.currentStatus = status
-
-	// If the core has confirmed a pending mode change, clear it.
-	// Until confirmed, keep using pendingMode so the icon/menu don't revert.
-	if app.pendingMode != "" {
-		if status.Mode == app.pendingMode {
-			log.Printf("🎨 Core confirmed mode: %s", app.pendingMode)
-			app.pendingMode = ""
-		} else {
-			// Core hasn't caught up yet — keep showing the pending mode
-			app.currentStatus.Mode = app.pendingMode
-		}
-	}
-
-	// Detect recording state from OBS payload
-	isRecording := false
-	if recordingState, ok := status.RecordingState.(map[string]interface{}); ok {
-		if recording, exists := recordingState["recording"]; exists {
-			if recordingBool, ok := recording.(bool); ok {
-				isRecording = recordingBool
-			}
-		}
-	}
-
-	effectiveMode := app.currentStatus.Mode
-
-	// Update icon whenever anything that affects its color changes
-	iconChanged := effectiveMode != oldMode ||
-		status.OBSConnected != oldOBS ||
-		isRecording != oldRecording ||
-		(status.LastError != "") != (oldError != "")
-
-	if iconChanged {
-		if effectiveMode != oldMode {
-			log.Printf("🎨 Mode changed: %s → %s", oldMode, effectiveMode)
-		}
-		app.updateMenuBarIcon()
-	}
-
-	// Rebuild menu if mode or recording state changed
-	if isRecording != oldRecording || effectiveMode != oldMode {
-		log.Printf("Status changed: recording=%v->%v mode=%s->%s",
-			oldRecording, isRecording, oldMode, effectiveMode)
-		app.rebuildMenu()
-	}
-
-	if isRecording && !app.previousRecording {
-		// Started recording
-		app.recordingStartTime = time.Now()
-		if err := SendNotification("Memofy", "Recording Started", getDetectedAppString(status)); err != nil {
-			log.Printf("Warning: failed to send notification: %v", err)
-		}
-	} else if !isRecording && app.previousRecording {
-		// Stopped recording
-		duration := time.Since(app.recordingStartTime)
-		if err := SendNotification("Memofy", "Recording Stopped", fmt.Sprintf("Duration: %s", formatDuration(duration))); err != nil {
-			log.Printf("Warning: failed to send notification: %v", err)
-		}
-	}
-	app.previousRecording = isRecording
-
-	// Handle error notifications (T081: ERROR state notification)
-	if status.LastError != "" && status.LastError != app.lastErrorShown {
-		app.lastErrorShown = status.LastError
-		app.lastErrorTime = time.Now()
-		if err := SendErrorNotification("Memofy Error", status.LastError); err != nil {
-			log.Printf("Warning: failed to send error notification: %v", err)
-		}
-	}
-
-	// Log detailed status (T085: Status display with all information)
-	icon := getStatusIcon(status)
-	appDetected := getDetectedAppString(status)
-	duration := ""
-	if isRecording {
-		duration = fmt.Sprintf(" (%.0fs)", time.Since(app.recordingStartTime).Seconds())
-	}
-
-	log.Printf("%s Status: Mode=%s, App=%s, OBS=%v, Recording=%v%s, Error=%q",
-		icon,
-		status.Mode,
-		appDetected,
-		status.OBSConnected,
-		isRecording,
-		duration,
-		status.LastError)
-}
-
-// updateMenuBarIcon updates the menu bar button icon based on status.
-// Called from ApplyPendingUpdate which runs on the main thread.
-func (app *StatusBarApp) updateMenuBarIcon() {
-	if app.currentStatus == nil {
-		return
-	}
-
-	button := app.statusItem.Button()
-	button.SetImage(iconForStatus(app.currentStatus))
-}
-
-// StartUpdateTimer schedules a repeating NSTimer on the main run loop that flushes
-// any pending status updates every 500ms. Must be called from the main thread,
-// after app.Run() has started (or just before — the timer fires on the run loop).
+// StartUpdateTimer schedules a repeating timer that polls engine status
+// and updates the menu bar UI. Must be called from the main thread.
 func (app *StatusBarApp) StartUpdateTimer() {
 	foundation.Timer_ScheduledTimerWithTimeIntervalRepeatsBlock(0.5, true, func(_ foundation.Timer) {
-		app.ApplyPendingUpdate()
+		app.pollAndUpdate()
 	})
-	log.Println("✓ UI update timer started (0.5s interval)")
+	log.Println("UI update timer started (0.5s)")
 }
 
-// rebuildMenu reconstructs the menu based on current status
-// Called from ApplyPendingUpdate (via timer on main thread) and when menu opens.
+// pollAndUpdate reads current engine status and updates the UI.
+func (app *StatusBarApp) pollAndUpdate() {
+	if app.eng == nil {
+		return
+	}
+
+	status := app.eng.GetStatus()
+	isRecording := status.State == "recording" || status.State == "silence_wait"
+
+	// Detect state changes
+	stateChanged := status.State != app.lastStatus.State
+	recordingChanged := isRecording != app.wasRecording
+
+	if stateChanged {
+		app.updateMenuBarIcon(status)
+		app.rebuildMenu()
+	}
+
+	if recordingChanged {
+		if isRecording {
+			app.recordStart = time.Now()
+			_ = SendNotification("Memofy", "Recording Started", fmt.Sprintf("Device: %s", status.DeviceName))
+		} else if app.wasRecording {
+			dur := time.Since(app.recordStart)
+			_ = SendNotification("Memofy", "Recording Stopped", fmt.Sprintf("Duration: %s", FormatDuration(dur.Seconds())))
+		}
+		app.wasRecording = isRecording
+	}
+
+	// Handle errors
+	if status.LastError != "" && status.LastError != app.lastStatus.LastError {
+		_ = SendErrorNotification("Memofy Error", status.LastError)
+	}
+
+	app.lastStatus = status
+}
+
+// updateMenuBarIcon sets the icon color based on current state.
+func (app *StatusBarApp) updateMenuBarIcon(status engine.StatusSnapshot) {
+	button := app.statusItem.Button()
+	var color appkit.Color
+
+	switch status.State {
+	case "recording":
+		color = appkit.Color_SystemRedColor()
+	case "silence_wait":
+		color = appkit.Color_SystemOrangeColor()
+	case "arming":
+		color = appkit.Color_SystemYellowColor()
+	case "error":
+		color = appkit.Color_SystemRedColor()
+	default:
+		color = appkit.Color_SystemGrayColor()
+	}
+
+	button.SetImage(tintedMenubarIcon(color))
+}
+
+// rebuildMenu constructs the menu based on current status.
 func (app *StatusBarApp) rebuildMenu() {
 	app.menu.RemoveAllItems()
 
-	status := app.currentStatus
-	if status == nil {
-		item := appkit.NewMenuItem()
-		item.SetTitle("Loading...")
-		app.menu.AddItem(item)
-		return
-	}
+	status := app.lastStatus
 
 	// Status header
-	isRecording := false
-	if recordingState, ok := status.RecordingState.(map[string]interface{}); ok {
-		if recording, exists := recordingState["recording"]; exists {
-			if recordingBool, ok := recording.(bool); ok {
-				isRecording = recordingBool
-			}
+	stateLabel := stateDisplayName(status.State)
+	statusText := fmt.Sprintf("Status: %s", stateLabel)
+	if status.State == "recording" || status.State == "silence_wait" {
+		if !status.RecordingStart.IsZero() {
+			dur := time.Since(status.RecordingStart)
+			statusText += fmt.Sprintf(" (%.0fs)", dur.Seconds())
 		}
-	}
-
-	statusText := fmt.Sprintf("Status: %s", getStatusIcon(status))
-	if isRecording {
-		duration := time.Since(app.recordingStartTime)
-		statusText += fmt.Sprintf(" (Recording %.0fs)", duration.Seconds())
 	}
 	statusItem := appkit.NewMenuItem()
 	statusItem.SetTitle(statusText)
 	statusItem.SetEnabled(false)
 	app.menu.AddItem(statusItem)
 
+	// Device info
+	if status.DeviceName != "" {
+		devItem := appkit.NewMenuItem()
+		devItem.SetTitle(fmt.Sprintf("Device: %s", status.DeviceName))
+		devItem.SetEnabled(false)
+		app.menu.AddItem(devItem)
+	}
+
+	// Current file
+	if status.CurrentFile != "" {
+		fileItem := appkit.NewMenuItem()
+		fileItem.SetTitle(fmt.Sprintf("File: %s", filepath.Base(status.CurrentFile)))
+		fileItem.SetEnabled(false)
+		app.menu.AddItem(fileItem)
+	}
+
 	app.menu.AddItem(appkit.MenuItem_SeparatorItem())
 
-	// Recording controls
-	if isRecording {
-		stopItem := appkit.NewMenuItem()
-		stopItem.SetTitle("⏹ Stop Recording")
-		action.Set(stopItem, app.StopRecording)
-		app.menu.AddItem(stopItem)
-	} else {
-		startItem := appkit.NewMenuItem()
-		startItem.SetTitle("▶️ Start Recording")
-		action.Set(startItem, app.StartRecording)
-		app.menu.AddItem(startItem)
-	}
+	// Open Recordings Folder
+	recordingsItem := appkit.NewMenuItem()
+	recordingsItem.SetTitle("Open Recordings Folder")
+	action.Set(recordingsItem, func(_ objc.Object) {
+		dir := config.ResolvePath(app.cfg.Output.Dir)
+		cmd := exec.Command("open", dir)
+		if err := cmd.Run(); err != nil {
+			log.Printf("Failed to open recordings folder: %v", err)
+		}
+	})
+	app.menu.AddItem(recordingsItem)
 
-	// Mode selection
-	app.menu.AddItem(appkit.MenuItem_SeparatorItem())
-
-	autoItem := appkit.NewMenuItem()
-	autoItem.SetTitle("🔄 Auto Mode")
-	if status.Mode == ipc.ModeAuto {
-		autoItem.SetState(appkit.OnState)
-	} else {
-		autoItem.SetState(appkit.OffState)
-	}
-	action.Set(autoItem, app.SetAutoMode)
-	app.menu.AddItem(autoItem)
-
-	manualItem := appkit.NewMenuItem()
-	manualItem.SetTitle("🎛 Manual Mode")
-	if status.Mode == ipc.ModeManual {
-		manualItem.SetState(appkit.OnState)
-	} else {
-		manualItem.SetState(appkit.OffState)
-	}
-	action.Set(manualItem, app.SetManualMode)
-	app.menu.AddItem(manualItem)
-
-	pauseItem := appkit.NewMenuItem()
-	pauseItem.SetTitle("⏸ Pause Detection")
-	if status.Mode == ipc.ModePaused {
-		pauseItem.SetState(appkit.OnState)
-	} else {
-		pauseItem.SetState(appkit.OffState)
-	}
-	action.Set(pauseItem, app.SetPauseMode)
-	app.menu.AddItem(pauseItem)
-
-	// Utilities
-	app.menu.AddItem(appkit.MenuItem_SeparatorItem())
-
+	// Settings
 	settingsItem := appkit.NewMenuItem()
-	settingsItem.SetTitle("⚙️ Settings...")
-	action.Set(settingsItem, app.ShowSettings)
+	settingsItem.SetTitle("Settings...")
+	action.Set(settingsItem, func(_ objc.Object) {
+		if err := app.settingsWindow.Show(); err != nil {
+			log.Printf("Failed to show settings: %v", err)
+		}
+	})
 	app.menu.AddItem(settingsItem)
 
-	logsItem := appkit.NewMenuItem()
-	logsItem.SetTitle("📄 Open Logs")
-	action.Set(logsItem, app.OpenLogs)
-	app.menu.AddItem(logsItem)
+	app.menu.AddItem(appkit.MenuItem_SeparatorItem())
 
-	checkUpdateItem := appkit.NewMenuItem()
-	checkUpdateItem.SetTitle("🔄 Check for Updates")
-	action.Set(checkUpdateItem, app.CheckForUpdates)
-	app.menu.AddItem(checkUpdateItem)
+	// Check for Updates
+	updateItem := appkit.NewMenuItem()
+	updateItem.SetTitle("Check for Updates...")
+	action.Set(updateItem, func(_ objc.Object) {
+		app.aboutWindow.RunUpdateCheck()
+	})
+	app.menu.AddItem(updateItem)
 
+	// About
 	aboutItem := appkit.NewMenuItem()
-	aboutItem.SetTitle("ℹ️ About Memofy")
-	action.Set(aboutItem, app.ShowAbout)
+	aboutItem.SetTitle("About Memofy")
+	action.Set(aboutItem, func(_ objc.Object) {
+		if err := app.aboutWindow.Show(); err != nil {
+			log.Printf("Failed to show About: %v", err)
+		}
+	})
 	app.menu.AddItem(aboutItem)
 
 	// Quit
@@ -385,257 +220,31 @@ func (app *StatusBarApp) rebuildMenu() {
 	quitItem := appkit.NewMenuItem()
 	quitItem.SetTitle("Quit")
 	quitItem.SetKeyEquivalent("q")
-	quitFunc := func(sender objc.Object) {
+	action.Set(quitItem, func(_ objc.Object) {
+		if app.eng != nil {
+			app.eng.Stop()
+		}
 		appkit.Application_SharedApplication().Terminate(nil)
-	}
-	action.Set(quitItem, quitFunc)
+	})
 	app.menu.AddItem(quitItem)
 }
 
-// ShowAbout displays the About dialog.
-// Runs synchronously on the main thread (standard NSMenu action pattern).
-func (app *StatusBarApp) ShowAbout(sender objc.Object) {
-	if err := app.aboutWindow.Show(); err != nil {
-		log.Printf("Failed to show About dialog: %v", err)
-		if notifErr := SendNotification("Memofy", "Error", "Could not open About window"); notifErr != nil {
-			log.Printf("Warning: failed to send notification: %v", notifErr)
-		}
+// stateDisplayName returns a human-readable name for a state.
+func stateDisplayName(state string) string {
+	switch state {
+	case "idle":
+		return "Idle"
+	case "arming":
+		return "Listening"
+	case "recording":
+		return "Recording"
+	case "silence_wait":
+		return "Recording (silence)"
+	case "finalizing":
+		return "Finalizing"
+	case "error":
+		return "Error"
+	default:
+		return state
 	}
 }
-
-// CheckForUpdates checks for a newer version and offers to install it.
-// Runs synchronously on the main thread (standard NSMenu action pattern).
-// The underlying HTTP call and dialogs block the run loop briefly but this is
-// identical to how ShowAbout has always worked.
-func (app *StatusBarApp) CheckForUpdates(sender objc.Object) {
-	app.aboutWindow.RunUpdateCheck()
-}
-
-// sendCommand writes a command to the daemon
-func (app *StatusBarApp) sendCommand(cmd ipc.Command) {
-	if err := ipc.WriteCommand(cmd); err != nil {
-		log.Printf("Failed to write command: %v", err)
-		if notifErr := SendNotification("Memofy", "Error", "Could not send command"); notifErr != nil {
-			log.Printf("Warning: failed to send notification: %v", notifErr)
-		}
-	}
-}
-
-// StartRecording sends start command (T075)
-func (app *StatusBarApp) StartRecording(sender objc.Object) {
-	app.sendCommand(ipc.CmdStart)
-	if err := SendNotification("Memofy", "Command Sent", "Starting recording"); err != nil {
-		log.Printf("Warning: failed to send notification: %v", err)
-	}
-}
-
-// StopRecording sends stop command (T076)
-func (app *StatusBarApp) StopRecording(sender objc.Object) {
-	app.sendCommand(ipc.CmdStop)
-	if err := SendNotification("Memofy", "Command Sent", "Stopping recording"); err != nil {
-		log.Printf("Warning: failed to send notification: %v", err)
-	}
-}
-
-// SetAutoMode sends auto mode command (T077)
-func (app *StatusBarApp) SetAutoMode(sender objc.Object) {
-	app.sendCommand(ipc.CmdAuto)
-	app.applyModeColor(ipc.ModeAuto)
-	if err := SendNotification("Memofy", "Mode Changed", "Auto: detection active, OBS controlled automatically"); err != nil {
-		log.Printf("Warning: failed to send notification: %v", err)
-	}
-}
-
-// SetManualMode sends manual mode command
-func (app *StatusBarApp) SetManualMode(sender objc.Object) {
-	app.sendCommand(ipc.CmdManual)
-	app.applyModeColor(ipc.ModeManual)
-	if err := SendNotification("Memofy", "Mode Changed", "Manual: detection active, you control OBS recording"); err != nil {
-		log.Printf("Warning: failed to send notification: %v", err)
-	}
-}
-
-// SetPauseMode sends pause command (T077)
-func (app *StatusBarApp) SetPauseMode(sender objc.Object) {
-	app.sendCommand(ipc.CmdPause)
-	app.applyModeColor(ipc.ModePaused)
-	if err := SendNotification("Memofy", "Mode Changed", "Paused: all detection suspended"); err != nil {
-		log.Printf("Warning: failed to send notification: %v", err)
-	}
-}
-
-// applyModeColor immediately reflects a user-selected mode in the icon and menu.
-// It stores the mode as pendingMode so poll updates won't revert it until the
-// core process confirms the change.
-func (app *StatusBarApp) applyModeColor(mode ipc.OperatingMode) {
-	app.pendingMode = mode
-	if app.currentStatus != nil {
-		app.currentStatus.Mode = mode
-	}
-	app.updateMenuBarIcon()
-	app.rebuildMenu()
-}
-
-// OpenRecordingsFolder opens the OBS recordings directory in Finder (T078)
-// Assumes recordings are saved to ~/Movies/Memofy (OBS default recording path)
-// TODO: Read actual recording path from OBS configuration if different
-func (app *StatusBarApp) OpenRecordingsFolder() {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Printf("Failed to get home directory: %v", err)
-		if notifErr := SendNotification("Memofy", "Error", "Could not determine recordings folder location"); notifErr != nil {
-			log.Printf("Warning: failed to send notification: %v", notifErr)
-		}
-		return
-	}
-
-	recordingsPath := filepath.Join(homeDir, "Movies", "Memofy")
-	cmd := exec.Command("open", recordingsPath, "-a", "Finder")
-	if err := cmd.Run(); err != nil {
-		log.Printf("Failed to open recordings folder: %v", err)
-		if notifErr := SendNotification("Memofy", "Error", "Could not open recordings folder"); notifErr != nil {
-			log.Printf("Warning: failed to send notification: %v", notifErr)
-		}
-	}
-}
-
-// OpenLogs opens the /tmp directory in Finder showing logs (T079)
-func (app *StatusBarApp) OpenLogs(sender objc.Object) {
-	cmd := exec.Command("open", "/tmp", "-a", "Finder")
-	if err := cmd.Run(); err != nil {
-		log.Printf("Failed to open logs: %v", err)
-		if notifErr := SendNotification("Memofy", "Error", "Could not open logs folder"); notifErr != nil {
-			log.Printf("Warning: failed to send notification: %v", notifErr)
-		}
-	}
-}
-
-// RegisterHotkeys registers global keyboard shortcuts for mode switching.
-// Shortcuts work system-wide regardless of which app is focused.
-//
-//	⌘⇧A → Auto mode
-//	⌘⇧M → Manual mode
-//	⌘⇧P → Pause/resume detection
-//
-// Note: macOS requires Accessibility permission for global key monitoring.
-// If permission is not granted the handler is registered but will receive no events.
-func (app *StatusBarApp) RegisterHotkeys() {
-	const cmdShift = appkit.EventModifierFlagCommand | appkit.EventModifierFlagShift
-	const relevantMask = appkit.EventModifierFlagCommand | appkit.EventModifierFlagShift |
-		appkit.EventModifierFlagOption | appkit.EventModifierFlagControl
-
-	appkit.Event_AddGlobalMonitorForEventsMatchingMaskHandler(
-		appkit.EventMaskKeyDown,
-		func(event appkit.Event) {
-			// Read per-event modifier flags via objc runtime (instance property)
-			flags := objc.Call[appkit.EventModifierFlags](event, objc.Sel("modifierFlags"))
-			// Only act when exactly ⌘⇧ is held (ignore Option/Ctrl combos)
-			if flags&relevantMask != cmdShift {
-				return
-			}
-			ch := event.CharactersIgnoringModifiers()
-			switch ch {
-			case "a", "A":
-				log.Println("[Hotkey] ⌘⇧A → Auto mode")
-				app.sendCommand(ipc.CmdAuto)
-				if err := SendNotification("Memofy", "Mode Changed", "Auto: detection active, OBS controlled automatically"); err != nil {
-					log.Printf("Warning: failed to send notification: %v", err)
-				}
-			case "m", "M":
-				log.Println("[Hotkey] ⌘⇧M → Manual mode")
-				app.sendCommand(ipc.CmdManual)
-				if err := SendNotification("Memofy", "Mode Changed", "Manual: detection active, you control OBS recording"); err != nil {
-					log.Printf("Warning: failed to send notification: %v", err)
-				}
-			case "p", "P":
-				log.Println("[Hotkey] ⌘⇧P → Pause mode")
-				app.sendCommand(ipc.CmdPause)
-				if err := SendNotification("Memofy", "Mode Changed", "Paused: all detection suspended"); err != nil {
-					log.Printf("Warning: failed to send notification: %v", err)
-				}
-			}
-		},
-	)
-	log.Println("✓ Global hotkeys registered: ⌘⇧A=Auto, ⌘⇧M=Manual, ⌘⇧P=Pause")
-}
-
-// ShowSettings opens the settings window (T082-T084)
-func (app *StatusBarApp) ShowSettings(sender objc.Object) {
-	if err := app.settingsWindow.Show(); err != nil {
-		log.Printf("Failed to show settings: %v", err)
-		if notifErr := SendNotification("Memofy", "Error", "Could not open settings"); notifErr != nil {
-			log.Printf("Warning: failed to send notification: %v", notifErr)
-		}
-	}
-}
-
-// GetStatusString returns a formatted status string for display (T085)
-func (app *StatusBarApp) GetStatusString() string {
-	if app.currentStatus == nil {
-		return "Status: Initializing..."
-	}
-
-	status := app.currentStatus
-	icon := getStatusIcon(status)
-	appDetected := getDetectedAppString(status)
-	recordingStatus := "Not Recording"
-
-	if status.OBSConnected {
-		recordingStatus = "Recording"
-		if status.Mode == ipc.ModePaused {
-			recordingStatus = "Paused"
-		}
-	}
-
-	return fmt.Sprintf("%s | Mode: %s | App: %s | %s",
-		icon, status.Mode, appDetected, recordingStatus)
-}
-
-// Helper functions
-
-// getStatusIcon returns an icon string based on the status
-func getStatusIcon(status *ipc.StatusSnapshot) string {
-	if status.LastError != "" {
-		return "⚠️"
-	}
-	if status.OBSConnected {
-		switch status.Mode {
-		case ipc.ModePaused:
-			return "⏸"
-		case ipc.ModeManual:
-			return "🎛"
-		}
-		return "🔴"
-	}
-	if status.TeamsDetected || status.ZoomDetected {
-		return "🟡"
-	}
-	return "⚪"
-}
-
-// getDetectedAppString returns the detected meeting app name
-func getDetectedAppString(status *ipc.StatusSnapshot) string {
-	if status.ZoomDetected {
-		return "Zoom"
-	}
-	if status.TeamsDetected {
-		return "Teams"
-	}
-	if status.GoogleMeetActive {
-		return "Google Meet"
-	}
-	return "None"
-}
-
-// formatDuration formats a duration nicely
-func formatDuration(d time.Duration) string {
-	if d.Hours() > 0 {
-		return fmt.Sprintf("%.1fh", d.Hours())
-	}
-	if d.Minutes() > 0 {
-		return fmt.Sprintf("%.1fm", d.Minutes())
-	}
-	return fmt.Sprintf("%.0fs", d.Seconds())
-}
-
-// Objective-C compatible menu action handlers
