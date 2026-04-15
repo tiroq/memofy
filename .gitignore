@@ -42,6 +42,5 @@ build/
 dist/
 .cache/
 *.log
-memofy-core
-memofy-ui
+memofy
 .task/
