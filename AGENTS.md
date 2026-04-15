@@ -4,7 +4,7 @@
 
 ## OVERVIEW
 
-Lightweight cross-platform (macOS + Linux) automatic audio recorder. Captures system sound via PortAudio when audio activity is detected. Uses silence-based splitting to create separate WAV files per session. Single binary with optional macOS menu bar UI.
+Lightweight cross-platform (macOS + Linux) automatic audio recorder. Captures system sound via native audio APIs when audio activity is detected. Uses silence-based splitting to create separate M4A/AAC (or WAV) files per session. Single binary with optional macOS menu bar UI.
 
 ## STRUCTURE
 
@@ -13,10 +13,10 @@ memofy/
 ├── cmd/
 │   └── memofy/         # CLI entry point: run, status, doctor, test-audio, check-updates
 ├── internal/
-│   ├── audio/          # PortAudio capture + platform device detection
+│   ├── audio/          # Audio capture + device detection + format profiles + conversion
 │   ├── autoupdate/     # GitHub release version checker
 │   ├── config/         # YAML configuration loading + saving
-│   ├── engine/         # Main recording loop (capture → detect → record → write)
+│   ├── engine/         # Main recording loop (capture → detect → record → write → convert)
 │   ├── statemachine/   # Recording lifecycle FSM
 │   ├── metadata/       # JSON sidecar file writer
 │   ├── monitor/        # Process detection (Zoom/Teams — metadata only)
@@ -33,9 +33,13 @@ memofy/
 | Task | Location |
 |------|----------|
 | Recording start/stop logic | `internal/statemachine/statemachine.go` |
-| Audio capture | `internal/audio/portaudio.go` |
+| Audio capture (macOS) | `internal/audio/coreaudio_darwin.go` |
+| Audio capture (Linux) | `internal/audio/portaudio.go` |
 | Device detection (macOS) | `internal/audio/device_darwin.go` |
 | Device detection (Linux) | `internal/audio/device_linux.go` |
+| Format profiles | `internal/audio/format.go` |
+| WAV→M4A conversion (macOS) | `internal/audio/convert_darwin.go` |
+| WAV→M4A conversion (Linux) | `internal/audio/convert_linux.go` |
 | RMS level calculation | `internal/audio/rms.go` |
 | Main recording loop | `internal/engine/engine.go` |
 | Configuration | `internal/config/config.go` |
@@ -61,8 +65,9 @@ memofy run  →  Engine  →  PortAudio  →  System Audio Device
                  └── macOS Menu Bar UI (polls engine status)
 ```
 
-- **Audio**: PortAudio via CGo (macOS: CoreAudio + BlackHole, Linux: PulseAudio)
-- **Storage**: WAV files + JSON sidecars
+- **Audio**: CoreAudio/AUHAL on macOS (no PortAudio), PortAudio via CGo on Linux
+- **Output**: WAV intermediate → M4A/AAC conversion (afconvert on macOS, ffmpeg on Linux)
+- **Storage**: M4A/WAV files + JSON sidecars
 - **Concurrency**: goroutines + sync.Mutex; no channels for business logic
 - **Config**: YAML file at `~/.config/memofy/config.yaml`
 
@@ -74,8 +79,10 @@ memofy run  →  Engine  →  PortAudio  →  System Audio Device
 | `StateMachine` | `statemachine` | Recording lifecycle FSM |
 | `State` | `statemachine` | idle/arming/recording/silence_wait/finalizing/error |
 | `Action` | `statemachine` | none/start_recording/continue/stop_recording |
-| `Stream` | `audio` | PortAudio capture stream |
+| `Stream` | `audio` | Audio capture stream |
 | `DeviceInfo` | `audio` | Audio device descriptor |
+| `FormatProfile` | `audio` | Recording quality preset name |
+| `FormatSpec` | `audio` | Output format specification |
 | `Config` | `config` | YAML config types |
 | `Recording` | `metadata` | JSON sidecar data |
 | `Snapshot` | `monitor` | Process detection state |
@@ -92,7 +99,8 @@ memofy run  →  Engine  →  PortAudio  →  System Audio Device
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
-- **No direct PortAudio calls outside `internal/audio/`**
+- **No direct PortAudio calls outside `internal/audio/`** (Linux only)
+- **No PortAudio on macOS** — use native CoreAudio
 - **No `log.Fatal` outside `main()`** — use error returns
 - **No AppKit code outside `pkg/macui/`** — platform UI is isolated
 - **No HTTP servers or WebSocket clients**
