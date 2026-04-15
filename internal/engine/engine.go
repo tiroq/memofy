@@ -378,7 +378,24 @@ func (e *Engine) finalizeRecording() {
 }
 
 func (e *Engine) findDevice() (*audio.DeviceInfo, error) {
+	// Always log all available input devices to help diagnose capture issues.
+	all := audio.ListInputDevices()
+	for i, d := range all {
+		e.logger.Printf("[devices] [%d] %q ch=%d rate=%.0f", i, d.Name, d.MaxInputCh, d.SampleRate)
+	}
+
 	device := e.cfg.Audio.Device
+
+	// "mic" is a special alias for the system default input device (microphone).
+	if device == "mic" {
+		dev, err := audio.DefaultInputDevice()
+		if err != nil {
+			return nil, fmt.Errorf("default input device: %w", err)
+		}
+		e.logger.Printf("Using default input (mic): %q", dev.Name)
+		return dev, nil
+	}
+
 	if device != "auto" && device != "" {
 		dev := audio.FindDevice(device)
 		if dev != nil {
@@ -386,6 +403,7 @@ func (e *Engine) findDevice() (*audio.DeviceInfo, error) {
 		}
 		return nil, fmt.Errorf("device %q not found", device)
 	}
+
 	var hint string
 	switch runtime.GOOS {
 	case "darwin":
@@ -395,12 +413,14 @@ func (e *Engine) findDevice() (*audio.DeviceInfo, error) {
 	}
 	dev := audio.FindSystemAudioDevice(hint)
 	if dev != nil {
+		e.logger.Printf("Warning: device %q captures system audio OUTPUT only. "+
+			"To record your microphone, set device: mic in config.", dev.Name)
 		return dev, nil
 	}
 	dev, err := audio.DefaultInputDevice()
 	if err != nil {
 		return nil, fmt.Errorf("no audio device found: %w", err)
 	}
-	e.logger.Printf("Warning: using default device %q", dev.Name)
+	e.logger.Printf("Warning: BlackHole not found, falling back to default input %q", dev.Name)
 	return dev, nil
 }
