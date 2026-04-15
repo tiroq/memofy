@@ -1,15 +1,13 @@
 version: '3'
 
 vars:
-  BINARY_CORE: memofy-core
-  BINARY_UI: memofy-ui
+  BINARY: memofy
   INSTALL_DIR: '{{.HOME}}/.local/bin'
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev"
   REPO_OWNER: tiroq
   REPO_NAME: memofy
-  # Prefer native arm64 Go toolchain (avoids Rosetta + darwinkit libffi crashes on macOS 26+)
-  # Falls back to system Go if arm64 toolchain is not available.
+  # Prefer native arm64 Go toolchain; falls back to system Go.
   GO_CMD:
     sh: command -v /usr/local/go-arm64/bin/go >/dev/null 2>&1 && echo "/usr/local/go-arm64/bin/go" || echo "go"
 
@@ -20,57 +18,30 @@ tasks:
       - task --list
 
   build:
-    desc: Build both core and UI binaries
-    cmds:
-      - task: build-core
-      - task: build-ui
-
-  build-core:
-    desc: Build the core daemon binary
+    desc: Build memofy binary
     sources:
-      - cmd/memofy-core/**/*.go
+      - cmd/memofy/**/*.go
       - internal/**/*.go
-      - pkg/**/*.go
     generates:
-      - build/{{.BINARY_CORE}}
+      - build/{{.BINARY}}
     cmds:
       - mkdir -p build
-      - '{{.GO_CMD}} build -ldflags "-X main.Version={{.VERSION}}" -o build/{{.BINARY_CORE}} ./cmd/memofy-core'
-
-  build-ui:
-    desc: Build the menu bar UI binary
-    sources:
-      - cmd/memofy-ui/**/*.go
-      - internal/**/*.go
-      - pkg/**/*.go
-    generates:
-      - build/{{.BINARY_UI}}
-    cmds:
-      - mkdir -p build
-      - '{{.GO_CMD}} build -ldflags "-X main.Version={{.VERSION}}" -o build/{{.BINARY_UI}} ./cmd/memofy-ui'
+      - '{{.GO_CMD}} build -ldflags "-X main.Version={{.VERSION}}" -o build/{{.BINARY}} ./cmd/memofy'
 
   install:
-    desc: Install binaries and LaunchAgent
+    desc: Install memofy binary
     deps: [build]
     cmds:
       - mkdir -p {{.INSTALL_DIR}}
-      # Run install-launchagent.sh first (it copies from bin/ and sets up launchd).
-      # Then overwrite with the freshly-built binaries from build/ so the correct
-      # version is always installed. This order matters: install-launchagent.sh
-      # uses bin/ as source, which may be stale.
-      - bash scripts/install-launchagent.sh
-      - cp build/{{.BINARY_CORE}} {{.INSTALL_DIR}}/
-      - cp build/{{.BINARY_UI}} {{.INSTALL_DIR}}/
-      - chmod +x {{.INSTALL_DIR}}/{{.BINARY_CORE}}
-      - chmod +x {{.INSTALL_DIR}}/{{.BINARY_UI}}
-      # Restart memofy-ui so it immediately picks up the newly installed binary.
-      - launchctl kickstart -k gui/$(id -u)/com.memofy.ui 2>/dev/null || true
-      - echo "✓ Installed to {{.INSTALL_DIR}}"
+      - cp build/{{.BINARY}} {{.INSTALL_DIR}}/
+      - chmod +x {{.INSTALL_DIR}}/{{.BINARY}}
+      - echo "✓ Installed to {{.INSTALL_DIR}}/{{.BINARY}}"
 
   uninstall:
-    desc: Uninstall binaries and LaunchAgent
+    desc: Uninstall memofy binary
     cmds:
-      - bash scripts/uninstall.sh
+      - rm -f {{.INSTALL_DIR}}/{{.BINARY}}
+      - echo "✓ Uninstalled memofy"
 
   test:
     desc: Run all tests
@@ -483,15 +454,11 @@ tasks:
 
   # Development tasks
 
-  dev-daemon:
-    desc: Run daemon in foreground for development
+  run:
+    desc: Build and run memofy
+    deps: [build]
     cmds:
-      - go run ./cmd/memofy-core
-
-  dev-ui:
-    desc: Run UI in foreground for development
-    cmds:
-      - go run ./cmd/memofy-ui
+      - ./build/{{.BINARY}} run
 
   dev-watch:
     desc: Watch for changes and rebuild
@@ -524,51 +491,25 @@ tasks:
       - go mod vendor
 
   logs:
-    desc: View daemon logs
+    desc: View memofy diagnostic logs
     cmds:
-      - tail -f /tmp/memofy-core.out.log
-
-  logs-ui:
-    desc: View UI logs
-    cmds:
-      - tail -f ~/.cache/memofy/memofy-ui.log
-
-  logs-error:
-    desc: View daemon error logs
-    cmds:
-      - tail -f /tmp/memofy-core.err.log
+      - tail -f ~/.cache/memofy/diag/*.ndjson 2>/dev/null || echo "No diagnostic logs found"
 
   status:
-    desc: Check daemon and UI status
+    desc: Check memofy status
     cmds:
-      - 'echo "→ LaunchAgent status:"'
-      - launchctl list | grep memofy || echo "  Not running"
+      - '{{.GO_CMD}} run ./cmd/memofy status'
       - echo ""
       - 'echo "→ Process status:"'
-      - ps aux | grep memofy | grep -v grep || echo "  No processes found"
+      - ps aux | grep memofy | grep -v grep || echo "  Not running"
       - echo ""
       - 'echo "→ Binary locations:"'
-      - ls -la {{.INSTALL_DIR}}/memofy-* 2>/dev/null || echo "  Not installed"
+      - ls -la {{.INSTALL_DIR}}/memofy 2>/dev/null || echo "  Not installed"
 
-  restart:
-    desc: Restart daemon and UI
+  doctor:
+    desc: Run system diagnostics
     cmds:
-      - launchctl unload ~/Library/LaunchAgents/com.memofy.core.plist 2>/dev/null || true
-      - sleep 1
-      - launchctl load ~/Library/LaunchAgents/com.memofy.core.plist
-      - echo "✓ Daemon restarted"
-
-  stop:
-    desc: Stop daemon
-    cmds:
-      - launchctl unload ~/Library/LaunchAgents/com.memofy.core.plist 2>/dev/null || true
-      - echo "✓ Daemon stopped"
-
-  start:
-    desc: Start daemon
-    cmds:
-      - launchctl load ~/Library/LaunchAgents/com.memofy.core.plist
-      - echo "✓ Daemon started"
+      - '{{.GO_CMD}} run ./cmd/memofy doctor'
 
   # CI/CD simulation tasks
 
