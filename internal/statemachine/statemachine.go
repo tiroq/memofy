@@ -2,11 +2,12 @@
 //
 // States:
 //
-//	idle            → no audio activity detected
-//	detecting_sound → sound detected, waiting to confirm before recording
-//	recording       → actively recording audio to file
-//	silence_wait    → silence detected during recording, waiting for threshold
-//	finalizing      → finishing the current recording file
+//	idle         → no audio activity detected
+//	arming       → sound detected, waiting for activation window before recording
+//	recording    → actively recording audio to file
+//	silence_wait → silence detected during recording, waiting for threshold
+//	finalizing   → finishing the current recording file
+//	error        → a fatal error occurred
 package statemachine
 
 import (
@@ -19,11 +20,12 @@ import (
 type State string
 
 const (
-	StateIdle           State = "idle"
-	StateDetectingSound State = "detecting_sound"
-	StateRecording      State = "recording"
-	StateSilenceWait    State = "silence_wait"
-	StateFinalizing     State = "finalizing"
+	StateIdle        State = "idle"
+	StateArming      State = "arming"
+	StateRecording   State = "recording"
+	StateSilenceWait State = "silence_wait"
+	StateFinalizing  State = "finalizing"
+	StateError       State = "error"
 )
 
 // Event represents an input signal to the state machine.
@@ -61,19 +63,22 @@ type StateMachine struct {
 	state State
 
 	// Timing
-	silenceStart    time.Time
-	recordingStart  time.Time
-	silenceDuration time.Duration // configurable silence threshold
+	silenceStart       time.Time
+	recordingStart     time.Time
+	armingStart        time.Time
+	silenceDuration    time.Duration // configurable silence threshold
+	activationDuration time.Duration // consecutive sound required to start recording
 
 	// Callbacks
 	onStateChange func(from, to State)
 }
 
-// New creates a state machine with the given silence threshold duration.
-func New(silenceThreshold time.Duration) *StateMachine {
+// New creates a state machine with the given silence threshold and activation window.
+func New(silenceThreshold, activationDuration time.Duration) *StateMachine {
 	return &StateMachine{
-		state:           StateIdle,
-		silenceDuration: silenceThreshold,
+		state:              StateIdle,
+		silenceDuration:    silenceThreshold,
+		activationDuration: activationDuration,
 	}
 }
 
@@ -146,20 +151,23 @@ func (sm *StateMachine) ProcessAudio(rmsLevel float64, threshold float64) Action
 	switch sm.state {
 	case StateIdle:
 		if hasSound {
-			sm.transition(StateDetectingSound)
-			return ActionStartRecording
+			sm.armingStart = time.Now()
+			sm.transition(StateArming)
+			return ActionNone
 		}
 		return ActionNone
 
-	case StateDetectingSound:
-		// This state is entered momentarily; recording should start immediately.
-		if hasSound {
+	case StateArming:
+		if !hasSound {
+			sm.armingStart = time.Time{}
+			sm.transition(StateIdle)
+			return ActionNone
+		}
+		if time.Since(sm.armingStart) >= sm.activationDuration {
 			sm.recordingStart = time.Now()
 			sm.transition(StateRecording)
-			return ActionContinue
+			return ActionStartRecording
 		}
-		// Sound disappeared before recording started — go back to idle.
-		sm.transition(StateIdle)
 		return ActionNone
 
 	case StateRecording:
@@ -189,6 +197,9 @@ func (sm *StateMachine) ProcessAudio(rmsLevel float64, threshold float64) Action
 		// Recording is being finalized. Once done, caller should call Reset().
 		return ActionNone
 
+	case StateError:
+		return ActionNone
+
 	default:
 		return ActionNone
 	}
@@ -201,6 +212,14 @@ func (sm *StateMachine) Reset() {
 	sm.transition(StateIdle)
 	sm.recordingStart = time.Time{}
 	sm.silenceStart = time.Time{}
+	sm.armingStart = time.Time{}
+}
+
+// EnterError transitions to the error state.
+func (sm *StateMachine) EnterError() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.transition(StateError)
 }
 
 // transition changes state and fires the callback.
