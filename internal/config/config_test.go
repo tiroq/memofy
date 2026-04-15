@@ -16,6 +16,9 @@ func TestDefault(t *testing.T) {
 	if cfg.Audio.Device != "auto" {
 		t.Errorf("device: got %s, want auto", cfg.Audio.Device)
 	}
+	if cfg.Audio.FormatProfile != "high" {
+		t.Errorf("format_profile: got %s, want high", cfg.Audio.FormatProfile)
+	}
 }
 
 func TestLoadValid(t *testing.T) {
