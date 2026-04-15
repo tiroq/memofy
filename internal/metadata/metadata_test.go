@@ -152,3 +152,37 @@ func TestWriteM4AExtension(t *testing.T) {
 		t.Error("expected .json file alongside .m4a")
 	}
 }
+
+func TestWriteErrorOnInvalidDir(t *testing.T) {
+	meta := Recording{
+		StartedAt: time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC),
+		EndedAt:   time.Date(2026, 1, 1, 10, 1, 0, 0, time.UTC),
+	}
+
+	err := Write("/nonexistent/dir/recording.wav", meta)
+	if err == nil {
+		t.Error("expected error writing to nonexistent directory")
+	}
+}
+
+func TestWritePreexistingSessionID(t *testing.T) {
+	dir := t.TempDir()
+	wavPath := dir + "/test_sid.wav"
+	os.WriteFile(wavPath, []byte("fake"), 0644)
+
+	meta := Recording{
+		SessionID: "custom-session-123",
+		StartedAt: time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC),
+		EndedAt:   time.Date(2026, 1, 1, 10, 1, 0, 0, time.UTC),
+	}
+	if err := Write(wavPath, meta); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	data, _ := os.ReadFile(dir + "/test_sid.json")
+	var got Recording
+	json.Unmarshal(data, &got)
+	if got.SessionID != "custom-session-123" {
+		t.Errorf("session_id: got %s, want custom-session-123", got.SessionID)
+	}
+}
