@@ -23,6 +23,7 @@ type SettingsWindow struct {
 	threshold      appkit.TextField
 	activationMs   appkit.TextField
 	silenceSeconds appkit.TextField
+	formatProfile  appkit.TextField
 
 	// Output tab controls
 	outputDir appkit.TextField
@@ -161,6 +162,14 @@ func (sw *SettingsWindow) buildAudioTab() appkit.IView {
 	sw.silenceSeconds.SetToolTip("Seconds of silence before splitting into a new file. Default: 60")
 	root.AddArrangedSubview(makeLabeledRow("Silence Split (s):", sw.silenceSeconds))
 
+	root.AddArrangedSubview(makeBoldLabel("Recording"))
+	root.AddArrangedSubview(makeSeparator())
+
+	sw.formatProfile = makeEditableField("high")
+	sw.formatProfile.SetToolTip("Format profile: high, balanced, lightweight, wav")
+	root.AddArrangedSubview(makeLabeledRow("Format Profile:", sw.formatProfile))
+	root.AddArrangedSubview(makeHintLabel("high = M4A/AAC 32kHz 64kbps, balanced = 24kHz 48kbps, lightweight = 16kHz 32kbps, wav = raw"))
+
 	root.AddArrangedSubview(makeBoldLabel("Output"))
 	root.AddArrangedSubview(makeSeparator())
 
@@ -223,6 +232,7 @@ func (sw *SettingsWindow) reloadFields() {
 	sw.threshold.SetStringValue(fields.Threshold)
 	sw.activationMs.SetStringValue(fields.ActivationMs)
 	sw.silenceSeconds.SetStringValue(fields.SilenceSeconds)
+	sw.formatProfile.SetStringValue(fields.FormatProfile)
 	sw.outputDir.SetStringValue(fields.OutputDir)
 
 	setCheckbox(sw.detectZoom, fields.DetectZoom)
@@ -240,6 +250,7 @@ func (sw *SettingsWindow) readFields() SettingsFields {
 		Threshold:                       sw.threshold.StringValue(),
 		ActivationMs:                    sw.activationMs.StringValue(),
 		SilenceSeconds:                  sw.silenceSeconds.StringValue(),
+		FormatProfile:                   sw.formatProfile.StringValue(),
 		OutputDir:                       sw.outputDir.StringValue(),
 		DetectZoom:                      isCheckboxOn(sw.detectZoom),
 		DetectTeams:                     isCheckboxOn(sw.detectTeams),

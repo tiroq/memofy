@@ -57,12 +57,14 @@ func NewStatusBarApp(version string, eng *engine.Engine, cfg config.Config) *Sta
 func (app *StatusBarApp) createStatusBar() {
 	statusBar := appkit.StatusBar_SystemStatusBar()
 	app.statusItem = statusBar.StatusItemWithLength(appkit.VariableStatusItemLength)
+	app.statusItem.Retain() // prevent deallocation when autorelease pool drains
 
 	button := app.statusItem.Button()
 	button.SetTitle("")
 	button.SetImage(tintedMenubarIcon(appkit.Color_SystemGrayColor()))
 
 	app.menu = appkit.NewMenu()
+	app.menu.Retain() // prevent deallocation when autorelease pool drains
 	app.menu.SetAutoenablesItems(false)
 	app.rebuildMenu()
 	app.statusItem.SetMenu(app.menu)
@@ -163,6 +165,16 @@ func (app *StatusBarApp) rebuildMenu() {
 		app.menu.AddItem(devItem)
 	}
 
+	// Format profile
+	profileLabel := status.FormatProfile
+	if profileLabel == "" {
+		profileLabel = "high"
+	}
+	formatItem := appkit.NewMenuItem()
+	formatItem.SetTitle(fmt.Sprintf("Format: %s", profileLabel))
+	formatItem.SetEnabled(false)
+	app.menu.AddItem(formatItem)
+
 	// Current file
 	if status.CurrentFile != "" {
 		fileItem := appkit.NewMenuItem()
@@ -172,6 +184,29 @@ func (app *StatusBarApp) rebuildMenu() {
 	}
 
 	app.menu.AddItem(appkit.MenuItem_SeparatorItem())
+
+	// Change Format submenu
+	formatMenu := appkit.NewMenu()
+	formatMenu.SetTitle("Change Format")
+	for _, profile := range []string{"high", "balanced", "lightweight", "wav"} {
+		p := profile // capture for closure
+		label := formatDisplayName(p)
+		if p == profileLabel {
+			label = "✓ " + label
+		}
+		item := appkit.NewMenuItem()
+		item.SetTitle(label)
+		action.Set(item, func(_ objc.Object) {
+			app.eng.SetFormatProfile(p)
+			app.rebuildMenu()
+			log.Printf("Format changed to: %s", p)
+		})
+		formatMenu.AddItem(item)
+	}
+	changeFormatItem := appkit.NewMenuItem()
+	changeFormatItem.SetTitle("Change Format")
+	changeFormatItem.SetSubmenu(formatMenu)
+	app.menu.AddItem(changeFormatItem)
 
 	// Open Recordings Folder
 	recordingsItem := appkit.NewMenuItem()
@@ -246,5 +281,21 @@ func stateDisplayName(state string) string {
 		return "Error"
 	default:
 		return state
+	}
+}
+
+// formatDisplayName returns a human-readable name for a format profile.
+func formatDisplayName(profile string) string {
+	switch profile {
+	case "high":
+		return "High Quality"
+	case "balanced":
+		return "Balanced"
+	case "lightweight":
+		return "Lightweight"
+	case "wav":
+		return "WAV (Raw)"
+	default:
+		return profile
 	}
 }
