@@ -5,6 +5,7 @@ package macui
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -61,7 +62,7 @@ func (app *StatusBarApp) createStatusBar() {
 
 	button := app.statusItem.Button()
 	button.SetTitle("")
-	button.SetImage(tintedMenubarIcon(appkit.Color_SystemGrayColor()))
+	button.SetImage(loadMenubarIcon())
 
 	app.menu = appkit.NewMenu()
 	app.menu.Retain() // prevent deallocation when autorelease pool drains
@@ -116,25 +117,22 @@ func (app *StatusBarApp) pollAndUpdate() {
 	app.lastStatus = status
 }
 
-// updateMenuBarIcon sets the icon color based on current state.
+// updateMenuBarIcon sets a state indicator in the button title.
+// The template icon handles its own tinting; we prefix a symbol for active states.
 func (app *StatusBarApp) updateMenuBarIcon(status engine.StatusSnapshot) {
 	button := app.statusItem.Button()
-	var color appkit.Color
-
 	switch status.State {
 	case "recording":
-		color = appkit.Color_SystemRedColor()
+		button.SetTitle("⏺")
 	case "silence_wait":
-		color = appkit.Color_SystemOrangeColor()
+		button.SetTitle("⏸")
 	case "arming":
-		color = appkit.Color_SystemYellowColor()
+		button.SetTitle("…")
 	case "error":
-		color = appkit.Color_SystemRedColor()
+		button.SetTitle("!")
 	default:
-		color = appkit.Color_SystemGrayColor()
+		button.SetTitle("")
 	}
-
-	button.SetImage(tintedMenubarIcon(color))
 }
 
 // rebuildMenu constructs the menu based on current status.
@@ -213,6 +211,10 @@ func (app *StatusBarApp) rebuildMenu() {
 	recordingsItem.SetTitle("Open Recordings Folder")
 	action.Set(recordingsItem, func(_ objc.Object) {
 		dir := config.ResolvePath(app.cfg.Output.Dir)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			log.Printf("Failed to create recordings folder: %v", err)
+			return
+		}
 		cmd := exec.Command("open", dir)
 		if err := cmd.Run(); err != nil {
 			log.Printf("Failed to open recordings folder: %v", err)
