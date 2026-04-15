@@ -1,0 +1,16 @@
+# Memofy configuration example
+# Copy to ~/.config/memofy/config.yaml
+
+audio:
+  device: auto            # "auto" or device name substring (e.g. "BlackHole 2ch")
+  threshold: 0.02         # RMS level for sound detection (0.0 - 1.0)
+  silence_seconds: 60     # seconds of silence before splitting into new file
+  sample_rate: 44100      # audio sample rate in Hz
+  channels: 2             # number of audio channels
+
+output:
+  dir: ~/Recordings/Memofy   # where recordings are saved
+
+platform:
+  macos_device: "BlackHole"   # device name hint for macOS auto-detection
+  linux_device: "default"     # device name hint for Linux auto-detection
