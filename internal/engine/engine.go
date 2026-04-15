@@ -36,6 +36,7 @@ type Engine struct {
 	lastError   string
 	monSnapshot monitor.Snapshot
 	version     string
+	formatSpec  audio.FormatSpec
 }
 
 // StatusSnapshot is a point-in-time view of engine state for the UI.
@@ -45,6 +46,7 @@ type StatusSnapshot struct {
 	CurrentFile    string
 	RecordingStart time.Time
 	SilenceElapsed time.Duration
+	FormatProfile  string
 	ZoomRunning    bool
 	TeamsRunning   bool
 	MicActive      bool
@@ -59,11 +61,12 @@ func New(cfg config.Config, logger *log.Logger) *Engine {
 	silenceDur := time.Duration(cfg.Audio.SilenceSeconds) * time.Second
 	activationDur := time.Duration(cfg.Audio.ActivationMs) * time.Millisecond
 	return &Engine{
-		cfg:    cfg,
-		sm:     statemachine.New(silenceDur, activationDur),
-		mon:    monitor.New(),
-		logger: logger,
-		stopCh: make(chan struct{}),
+		cfg:        cfg,
+		sm:         statemachine.New(silenceDur, activationDur),
+		mon:        monitor.New(),
+		logger:     logger,
+		stopCh:     make(chan struct{}),
+		formatSpec: audio.GetFormatSpec(cfg.Audio.FormatProfile),
 	}
 }
 
@@ -72,6 +75,23 @@ func (e *Engine) SetVersion(v string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.version = v
+}
+
+// SetFormatProfile changes the recording format profile.
+// Takes effect on the next recording.
+func (e *Engine) SetFormatProfile(profile string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.cfg.Audio.FormatProfile = profile
+	e.formatSpec = audio.GetFormatSpec(profile)
+	e.logger.Printf("Format profile changed to: %s", profile)
+}
+
+// FormatProfile returns the current format profile name.
+func (e *Engine) FormatProfile() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.cfg.Audio.FormatProfile
 }
 
 // Start initializes audio capture and begins the recording loop.
@@ -130,8 +150,8 @@ func (e *Engine) Start() error {
 	})
 	go e.loop()
 	go e.pollMonitor()
-	e.logger.Printf("Started (threshold=%.4f silence=%ds)",
-		e.cfg.Audio.Threshold, e.cfg.Audio.SilenceSeconds)
+	e.logger.Printf("Started (threshold=%.4f silence=%ds format=%s)",
+		e.cfg.Audio.Threshold, e.cfg.Audio.SilenceSeconds, e.cfg.Audio.FormatProfile)
 	return nil
 }
 
@@ -160,7 +180,7 @@ func (e *Engine) Status() string {
 	defer e.mu.Unlock()
 	state := e.sm.CurrentState()
 	snap := e.mon.Current()
-	s := fmt.Sprintf("State: %s", state)
+	s := fmt.Sprintf("State: %s | Format: %s", state, e.cfg.Audio.FormatProfile)
 	if state == statemachine.StateRecording || state == statemachine.StateSilenceWait {
 		s += fmt.Sprintf(" | File: %s", filepath.Base(e.currentFile))
 		s += fmt.Sprintf(" | Duration: %s", time.Since(e.recordStart).Truncate(time.Second))
@@ -189,6 +209,7 @@ func (e *Engine) GetStatus() StatusSnapshot {
 		CurrentFile:    e.currentFile,
 		RecordingStart: e.recordStart,
 		SilenceElapsed: e.sm.SilenceElapsed(),
+		FormatProfile:  e.cfg.Audio.FormatProfile,
 		ZoomRunning:    snap.ZoomRunning,
 		TeamsRunning:   snap.TeamsRunning,
 		MicActive:      snap.MicActive,
@@ -245,13 +266,15 @@ func (e *Engine) startRecording() {
 	defer e.mu.Unlock()
 	now := time.Now()
 	e.recordStart = now
-	snap := e.monSnapshot
-	micSuffix := "nomic"
-	if snap.MicActive {
-		micSuffix = "mic"
+
+	profile := e.cfg.Audio.FormatProfile
+	if profile == "" {
+		profile = "high"
 	}
+
+	// Always record to WAV first; convert on finalize if M4A profile.
 	filename := fmt.Sprintf("%s_audio_%s.wav",
-		now.Format("2006-01-02_150405"), micSuffix)
+		now.Format("2006-01-02_150405"), profile)
 	path := filepath.Join(e.outputDir, filename)
 	w, err := wav.Create(path, e.stream.SampleRate(), e.stream.Channels())
 	if err != nil {
@@ -261,7 +284,7 @@ func (e *Engine) startRecording() {
 	}
 	e.writer = w
 	e.currentFile = path
-	e.logger.Printf("Recording started: %s", filename)
+	e.logger.Printf("Recording started: %s (format=%s)", filename, profile)
 }
 
 func (e *Engine) writeAudio(samples []float32) {
