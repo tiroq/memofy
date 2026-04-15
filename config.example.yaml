@@ -6,8 +6,9 @@ audio:
   threshold: 0.02           # RMS level for sound detection (0.0 - 1.0)
   activation_ms: 400        # consecutive sound milliseconds before recording starts
   silence_seconds: 60       # seconds of silence before splitting into new file
-  sample_rate: 44100        # audio sample rate in Hz
-  channels: 2               # number of audio channels
+  format_profile: high      # high, balanced, lightweight, wav
+  sample_rate: 44100        # audio capture sample rate in Hz
+  channels: 2               # number of capture channels
 
 output:
   dir: ~/Recordings/Memofy  # where recordings are saved
@@ -27,3 +28,9 @@ logging:
 platform:
   macos_device: "BlackHole" # device name hint for macOS auto-detection
   linux_device: "default"   # device name hint for Linux auto-detection
+
+# Format profiles reference:
+#   high        - M4A/AAC, mono, 32kHz, 64kbps (default, best quality)
+#   balanced    - M4A/AAC, mono, 24kHz, 48kbps (good quality, smaller files)
+#   lightweight - M4A/AAC, mono, 16kHz, 32kbps (minimal storage)
+#   wav         - WAV/PCM, mono, 44.1kHz (raw, for diagnostics)
