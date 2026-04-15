@@ -2,15 +2,28 @@
 # Copy to ~/.config/memofy/config.yaml
 
 audio:
-  device: auto            # "auto" or device name substring (e.g. "BlackHole 2ch")
-  threshold: 0.02         # RMS level for sound detection (0.0 - 1.0)
-  silence_seconds: 60     # seconds of silence before splitting into new file
-  sample_rate: 44100      # audio sample rate in Hz
-  channels: 2             # number of audio channels
+  device: auto              # "auto" or device name substring (e.g. "BlackHole 2ch")
+  threshold: 0.02           # RMS level for sound detection (0.0 - 1.0)
+  activation_ms: 400        # consecutive sound milliseconds before recording starts
+  silence_seconds: 60       # seconds of silence before splitting into new file
+  sample_rate: 44100        # audio sample rate in Hz
+  channels: 2               # number of audio channels
 
 output:
-  dir: ~/Recordings/Memofy   # where recordings are saved
+  dir: ~/Recordings/Memofy  # where recordings are saved
+
+monitoring:
+  detect_zoom: true         # detect Zoom process (metadata only)
+  detect_teams: true        # detect Teams process (metadata only)
+  detect_mic_usage: true    # detect microphone activity (best-effort)
+  keep_single_session_while_mic_active: true  # prevent splitting while mic in use
+
+ui:
+  auto_check_updates: true  # check for updates on startup
+
+logging:
+  level: info               # log level: debug, info, warn, error
 
 platform:
-  macos_device: "BlackHole"   # device name hint for macOS auto-detection
-  linux_device: "default"     # device name hint for Linux auto-detection
+  macos_device: "BlackHole" # device name hint for macOS auto-detection
+  linux_device: "default"   # device name hint for Linux auto-detection
