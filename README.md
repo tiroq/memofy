@@ -1,22 +1,19 @@
 # Memofy
 
-Memofy is a lightweight automatic audio recorder for macOS and Linux that captures system sound when activity is detected.
-
-It runs in the background, starts recording when sound appears, and splits recordings automatically when silence exceeds a configurable threshold. On macOS, it includes a simple menu bar UI for status and configuration.
+Memofy is a lightweight automatic audio recorder for macOS and Linux. It captures system audio in the background, starts recording when sound is detected, and splits recordings automatically when silence exceeds a configurable threshold.
 
 ## Features
 
 - **Automatic recording** — starts when system audio exceeds threshold
-- **Silence-based splitting** — creates separate WAV files per audio session
-- **Activation window** — configurable time of continuous sound before recording starts (avoids false triggers)
-- **Cross-platform** — macOS (via BlackHole) and Linux (via PulseAudio/PipeWire)
-- **Menu bar UI** — macOS native status bar icon with settings and status display
-- **WAV output** — standard 16-bit PCM WAV files
-- **Metadata sidecars** — JSON files with timestamps, duration, device, and process info
-- **Process detection** — optional Zoom/Teams detection enriches metadata
+- **Silence-based splitting** — creates separate files per audio session
+- **Format profiles** — High Quality (M4A/AAC 32kHz 64kbps), Balanced, Lightweight, and WAV
+- **Cross-platform** — macOS (native CoreAudio + BlackHole) and Linux (PortAudio + PulseAudio/PipeWire)
+- **Menu bar UI** — macOS native status bar icon with format switching, settings, and status
+- **Settings window** — native macOS settings with audio, recording, monitoring, and general tabs
 - **Update checker** — checks GitHub releases for new versions
+- **Metadata sidecars** — JSON files with full recording metadata
+- **Process detection** — optional Zoom/Teams detection enriches metadata
 - **Simple CLI** — `run`, `status`, `doctor`, `test-audio`, `check-updates`
-- **Low resource usage** — single process, no server, no database
 
 ## How It Works
 
@@ -26,10 +23,11 @@ Memofy captures audio from a virtual loopback device (BlackHole on macOS, PulseA
 2. If sound persists for the activation window (default 400ms), recording **starts**
 3. Recording continues through brief silence
 4. When silence lasts longer than the configured duration (default 60s), the file is **finalized**
-5. A new session begins on next sound
+5. The WAV recording is converted to M4A/AAC (unless WAV format is selected)
+6. A JSON metadata sidecar is created alongside the recording
 
 ```
-Audio In → RMS Detection → State Machine → WAV Writer → File + Metadata
+Audio In → RMS Detection → State Machine → WAV Writer → [M4A Conversion] → File + Metadata
                                 ↑
                           Silence Timer
 ```
@@ -56,10 +54,7 @@ idle → arming → recording → silence_wait → finalizing → idle
    - Check both your speakers/headphones AND **BlackHole 2ch**
    - Set this as your system output device
 
-3. Install PortAudio:
-   ```
-   brew install portaudio
-   ```
+No other dependencies are required on macOS. Audio capture uses native CoreAudio and M4A conversion uses the built-in `afconvert` tool.
 
 ### Linux
 
@@ -76,18 +71,26 @@ idle → arming → recording → silence_wait → finalizing → idle
    # Arch
    sudo pacman -S portaudio
    ```
+4. Install ffmpeg for M4A/AAC conversion:
+   ```
+   # Debian/Ubuntu
+   sudo apt install ffmpeg
+
+   # Fedora
+   sudo dnf install ffmpeg
+
+   # Arch
+   sudo pacman -S ffmpeg
+   ```
 
 ## Installation
 
 ```bash
 # Build from source
-go build -o memofy ./cmd/memofy/
-
-# Build with version tag
-go build -ldflags "-X main.Version=1.0.0" -o memofy ./cmd/memofy/
-
-# Using task runner
 task build
+
+# Or manually
+go build -ldflags "-X main.Version=$(git describe --tags --always)" -o build/memofy ./cmd/memofy/
 ```
 
 ## Usage
@@ -98,9 +101,7 @@ task build
 memofy run
 ```
 
-On macOS, a menu bar icon appears showing current status. Use the menu to access settings, check for updates, or quit. Recording starts automatically when system audio is detected.
-
-Use Ctrl+C or the Quit menu item to stop.
+On macOS, a menu bar icon appears showing current status. Recording starts automatically when system audio is detected. Use the menu to change format, access settings, or quit.
 
 ### Check system setup
 
@@ -108,7 +109,15 @@ Use Ctrl+C or the Quit menu item to stop.
 memofy doctor
 ```
 
-Lists audio devices, verifies BlackHole/PulseAudio setup, and checks output directory.
+Verifies audio devices, BlackHole/PulseAudio setup, conversion tools, and output directory.
+
+### Show status
+
+```bash
+memofy status
+```
+
+Shows platform, format profile, output directory, and current recording state.
 
 ### Test audio capture
 
@@ -116,7 +125,7 @@ Lists audio devices, verifies BlackHole/PulseAudio setup, and checks output dire
 memofy test-audio
 ```
 
-Captures audio for 5 seconds and displays real-time RMS levels, showing whether sound is detected.
+Captures audio for 5 seconds and displays real-time RMS levels.
 
 ### Check for updates
 
@@ -124,13 +133,18 @@ Captures audio for 5 seconds and displays real-time RMS levels, showing whether 
 memofy check-updates
 ```
 
-Compares the current version against the latest GitHub release.
+## Format Profiles
 
-### Show version
+Change format from the menu bar or settings window. Default is **High Quality**.
 
-```bash
-memofy version
-```
+| Profile | Container | Codec | Sample Rate | Bitrate | Use Case |
+|---------|-----------|-------|-------------|---------|----------|
+| **High Quality** (default) | M4A | AAC | 32 kHz | 64 kbps | Best audio quality |
+| **Balanced** | M4A | AAC | 24 kHz | 48 kbps | Good quality, smaller files |
+| **Lightweight** | M4A | AAC | 16 kHz | 32 kbps | Minimal storage |
+| **WAV** | WAV | PCM 16-bit | 44.1 kHz | — | Raw/debug |
+
+All profiles record in mono.
 
 ## Configuration
 
@@ -142,6 +156,7 @@ audio:
   threshold: 0.02           # RMS level for sound detection (0.0 - 1.0)
   activation_ms: 400        # milliseconds of continuous sound before recording starts
   silence_seconds: 60       # seconds of silence before splitting into a new file
+  format_profile: high      # high, balanced, lightweight, wav
 
 output:
   dir: ~/Recordings/Memofy  # where recordings are saved
@@ -150,7 +165,6 @@ monitoring:
   detect_zoom: true         # detect Zoom process (metadata only)
   detect_teams: true        # detect Teams process (metadata only)
   detect_mic_usage: true    # detect microphone activity (best-effort)
-  keep_single_session_while_mic_active: true
 
 ui:
   auto_check_updates: true  # check for updates on startup
@@ -161,40 +175,41 @@ logging:
 
 All settings have sensible defaults. The config file is optional.
 
-### Settings Window (macOS)
-
-Open **Settings...** from the menu bar to edit configuration through a native GUI. Changes are saved to the config file and take effect on restart.
-
 ## Output
 
 ### File naming
 
 ```
-YYYY-MM-DD_HHMMSS_audio_[mic|nomic].wav
+YYYY-MM-DD_HHMMSS_audio_<quality>.<ext>
 ```
 
 Examples:
-- `2026-02-12_143015_audio_nomic.wav`
-- `2026-02-12_153422_audio_mic.wav`
+- `2026-02-12_143015_audio_high.m4a`
+- `2026-02-12_153422_audio_balanced.m4a`
+- `2026-02-12_160000_audio_wav.wav`
 
 ### Metadata sidecar
 
-Each WAV file gets a companion `.json` file:
+Each recording gets a companion `.json` file:
 
 ```json
 {
+  "session_id": "20260212T143015",
   "started_at": "2026-02-12T14:30:15Z",
   "ended_at": "2026-02-12T15:00:15Z",
   "duration_seconds": 1800,
   "platform": "darwin",
   "device_name": "BlackHole 2ch",
+  "format_profile": "high",
+  "container": "m4a",
+  "codec": "aac",
+  "sample_rate": 32000,
+  "channels": 1,
+  "bitrate_kbps": 64,
   "threshold": 0.02,
   "silence_split_seconds": 60,
-  "mic_active": false,
-  "zoom_running": true,
-  "teams_running": false,
-  "session_id": "20260212T143015",
-  "app_version": "0.1.0"
+  "split_reason": "silence_threshold",
+  "version": "0.2.0"
 }
 ```
 
@@ -210,41 +225,47 @@ The menu bar icon shows current state:
 | Orange | Recording (silence) — in silence wait |
 
 Menu items:
-- **Status** — current state, device, and file info
+- **Status** — current state and device
+- **Format** — current format profile
+- **Change Format** — switch between High Quality, Balanced, Lightweight, WAV
 - **Open Recordings Folder** — opens output directory in Finder
 - **Settings...** — edit configuration
 - **Check for Updates...** — compare with latest GitHub release
-- **About Memofy** — version and info
+- **About Memofy** — version and platform info
 - **Quit** — stop recording and exit
 
-## Architecture
+## Settings Window (macOS)
 
-```
-cmd/memofy/         CLI entry point (run, status, doctor, test-audio, check-updates)
-internal/
-  audio/            PortAudio capture + device detection (macOS/Linux)
-  config/           YAML configuration loading + saving
-  engine/           Main recording loop + status reporting
-  statemachine/     Recording lifecycle FSM (idle/arming/recording/silence_wait/finalizing)
-  metadata/         JSON sidecar writer
-  monitor/          Process detection (Zoom/Teams, best-effort)
-  wav/              WAV file writer (16-bit PCM)
-  autoupdate/       GitHub release version checker
-  diaglog/          Structured NDJSON debug logging
-  pidfile/          Single-instance enforcement
-pkg/
-  macui/            macOS menu bar UI (darwinkit/AppKit)
-```
+Open **Settings...** from the menu bar to edit configuration:
+
+### Audio Tab
+- Input device
+- Threshold
+- Activation window (ms)
+- Silence split (seconds)
+
+### Recording Tab
+- Format profile (high/balanced/lightweight/wav)
+- Output directory
+
+### Monitoring Tab
+- Zoom detection
+- Teams detection
+- Microphone activity detection
+
+### General Tab
+- Auto check for updates
+- Log level
 
 ## Limitations
 
 - **System audio only** — requires a virtual audio device (BlackHole on macOS)
 - **Audio only** — no video recording
 - **macOS and Linux only** — Windows is not supported
-- **Process detection is best-effort** — Zoom/Teams detection enriches metadata but does not control recording
-- **Microphone detection** — best-effort, may not be accurate on all systems
-- **PortAudio dependency** — requires libportaudio installed on the system
-- **Settings require restart** — audio setting changes take effect after restarting the app
+- **M4A conversion requires tools** — `afconvert` (macOS, built-in) or `ffmpeg` (Linux)
+- **Process detection is best-effort** — Zoom/Teams detection enriches metadata only
+- **Settings require restart** — audio settings take effect after restarting the app
+- **Linux has no tray UI** — CLI only on Linux
 
 ## Debug Logging
 
