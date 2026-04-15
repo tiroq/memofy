@@ -15,18 +15,25 @@ import (
 
 // Recording holds metadata about a single recording session.
 type Recording struct {
+	SessionID           string    `json:"session_id"`
 	StartedAt           time.Time `json:"started_at"`
 	EndedAt             time.Time `json:"ended_at"`
 	DurationSecs        float64   `json:"duration_seconds"`
 	Platform            string    `json:"platform"`
 	DeviceName          string    `json:"device_name"`
+	FormatProfile       string    `json:"format_profile"`
+	Container           string    `json:"container"`
+	Codec               string    `json:"codec"`
+	SampleRate          int       `json:"sample_rate"`
+	Channels            int       `json:"channels"`
+	BitrateKbps         int       `json:"bitrate_kbps,omitempty"`
 	Threshold           float64   `json:"threshold"`
 	SilenceSplitSeconds int       `json:"silence_split_seconds"`
-	MicActive           bool      `json:"mic_active"`
-	ZoomRunning         bool      `json:"zoom_running"`
-	TeamsRunning        bool      `json:"teams_running"`
-	SessionID           string    `json:"session_id"`
-	AppVersion          string    `json:"app_version"`
+	SplitReason         string    `json:"split_reason"`
+	MicActive           bool      `json:"mic_active,omitempty"`
+	ZoomRunning         bool      `json:"zoom_running,omitempty"`
+	TeamsRunning        bool      `json:"teams_running,omitempty"`
+	AppVersion          string    `json:"version"`
 }
 
 // Write creates a JSON sidecar file next to the recording.
