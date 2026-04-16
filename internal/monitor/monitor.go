@@ -46,6 +46,28 @@ var meetingBundles = []string{
 	"us.zoom.videomeeting",
 }
 
+// micNoiseBundles lists bundle ID prefixes for system/background processes that
+// continuously access the microphone and must not be treated as meeting-app
+// mic usage. MicBundleIDs still contains them for diagnostics; they are only
+// excluded from the MicActive determination.
+var micNoiseBundles = []string{
+	"com.apple.CoreSpeech",            // Siri / on-device speech recognition
+	"com.apple.SpeechRecognitionCore", // system dictation engine
+	"com.apple.accessibility.heard",   // Accessibility "Heard" listening
+}
+
+// isMicNoiseBundle returns true if the bundle ID belongs to a known system
+// background process that should not trigger a meeting-recording session.
+func isMicNoiseBundle(id string) bool {
+	lower := strings.ToLower(id)
+	for _, noise := range micNoiseBundles {
+		if strings.HasPrefix(lower, strings.ToLower(noise)) {
+			return true
+		}
+	}
+	return false
+}
+
 // Monitor checks for running meeting application processes.
 type Monitor struct {
 	mu       sync.RWMutex
@@ -76,7 +98,12 @@ func (m *Monitor) Poll() Snapshot {
 	if micdetect.IsSupported() {
 		if ids, err := micdetect.ActiveMicUserBundleIDs(); err == nil {
 			micBundleIDs = ids
-			micActive = len(ids) > 0
+			for _, id := range ids {
+				if !isMicNoiseBundle(id) {
+					micActive = true
+					break
+				}
+			}
 		}
 	} else {
 		// Fallback to lsof for older systems.
