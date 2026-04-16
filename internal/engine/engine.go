@@ -257,6 +257,8 @@ func (e *Engine) loop() {
 	var peakRMS float64
 	lastRMSLog := time.Now()
 
+	var lastReadErrLog time.Time // rate-limit unexpected Read errors to 1/s
+
 	for {
 		select {
 		case <-e.stopCh:
@@ -274,7 +276,29 @@ func (e *Engine) loop() {
 		default:
 		}
 		if err := e.stream.Read(buf); err != nil {
-			e.logger.Printf("Read error: %v", err)
+			// Check whether the read failure was intentional:
+			// (a) engine is shutting down — return cleanly without logging.
+			select {
+			case <-e.stopCh:
+				return
+			default:
+			}
+			// (b) a device-switch request is pending — the stop was deliberate to
+			// unblock this Read() so the switch can be processed. Handle it silently.
+			select {
+			case req := <-e.deviceSwitchCh:
+				if newBuf := e.handleDeviceSwitch(req); newBuf != nil {
+					buf = newBuf
+				}
+			default:
+				// Unexpected read failure — rate-limit to 1 log per second.
+				if time.Since(lastReadErrLog) >= time.Second {
+					e.logger.Printf("Read error: %v", err)
+					lastReadErrLog = time.Now()
+				}
+				// Brief sleep to prevent a tight spin if the stream stays broken.
+				time.Sleep(10 * time.Millisecond)
+			}
 			continue
 		}
 		rms := audio.RMS(buf)
@@ -546,6 +570,13 @@ func (e *Engine) handleDeviceSwitch(req deviceSwitchReq) []float32 {
 			}
 			newBuf = make([]float32, newStream.FramesPerBuffer()*newStream.Channels())
 			e.logger.Printf("[engine] capture device switched to %q", req.device.Name)
+		}
+	} else {
+		// No device switch requested. pollMonitor stopped the current stream
+		// to unblock Read() so this channel message could be processed.
+		// Restart the same stream so the loop can continue reading.
+		if err := e.stream.Start(); err != nil {
+			e.logger.Printf("[engine] stream restart failed: %v", err)
 		}
 	}
 	// Force-start recording when requested. When a dedicated device was switched
