@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+
+	"github.com/tiroq/memofy/internal/micdetect"
 )
 
 // Snapshot holds the current state of monitored processes.
@@ -24,13 +26,24 @@ type Snapshot struct {
 	// MeetRunning is true when a Google Meet tab may be open in a browser.
 	MeetRunning bool
 	// MicActive is a best-effort indicator that at least one known meeting
-	// app is actively accessing the microphone (detected via lsof).
+	// app is actively accessing the microphone.
 	MicActive bool
+	// MicBundleIDs contains bundle identifiers of processes actively
+	// using microphone input (populated via Core Audio on macOS 14+).
+	MicBundleIDs []string
 }
 
 // InCall returns true if any meeting app appears to be in an active call.
 func (s Snapshot) InCall() bool {
 	return s.ZoomInCall || s.MicActive
+}
+
+// meetingBundles are bundle IDs of known meeting applications.
+var meetingBundles = []string{
+	"com.microsoft.teams2",
+	"com.microsoft.teams",
+	"us.zoom.xos",
+	"us.zoom.videomeeting",
 }
 
 // Monitor checks for running meeting application processes.
@@ -56,15 +69,28 @@ func (m *Monitor) Poll() Snapshot {
 	teamsOpen := containsAny(procs, "Microsoft Teams", "teams")
 	meetOpen := containsAny(procs, "Google Meet", "meet")
 
-	var micPIDs []string
-	if teamsOpen {
-		micPIDs = append(micPIDs, getPIDs(pids, "teams", "microsoft teams")...)
-	}
-	if zoomInCall {
-		micPIDs = append(micPIDs, getPIDs(pids, "cpthost")...)
-	}
-	if meetOpen {
-		micPIDs = append(micPIDs, getPIDs(pids, "chrome", "safari", "firefox")...)
+	var micActive bool
+	var micBundleIDs []string
+
+	// Prefer Core Audio mic detection (macOS 14+) over lsof.
+	if micdetect.IsSupported() {
+		if ids, err := micdetect.ActiveMicUserBundleIDs(); err == nil {
+			micBundleIDs = ids
+			micActive = len(ids) > 0
+		}
+	} else {
+		// Fallback to lsof for older systems.
+		var micPIDs []string
+		if teamsOpen {
+			micPIDs = append(micPIDs, getPIDs(pids, "teams", "microsoft teams")...)
+		}
+		if zoomInCall {
+			micPIDs = append(micPIDs, getPIDs(pids, "cpthost")...)
+		}
+		if meetOpen {
+			micPIDs = append(micPIDs, getPIDs(pids, "chrome", "safari", "firefox")...)
+		}
+		micActive = micInUseByPIDs(micPIDs)
 	}
 
 	m.snapshot = Snapshot{
@@ -72,7 +98,8 @@ func (m *Monitor) Poll() Snapshot {
 		ZoomInCall:   zoomInCall,
 		TeamsRunning: teamsOpen,
 		MeetRunning:  meetOpen,
-		MicActive:    micInUseByPIDs(micPIDs),
+		MicActive:    micActive,
+		MicBundleIDs: micBundleIDs,
 	}
 
 	return m.snapshot
