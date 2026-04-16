@@ -392,3 +392,245 @@ func TestErrorState(t *testing.T) {
 		t.Errorf("after reset: got %s, want %s", sm.CurrentState(), StateIdle)
 	}
 }
+
+// ============================================================================
+// Scenario tests A–J (recording session policy)
+// ============================================================================
+
+// helper: arms and starts recording (activation window = 0).
+func startRecordingSM(sm *StateMachine) {
+	sm.ProcessAudio(0.05, 0.02) // idle → arming
+	sm.ProcessAudio(0.05, 0.02) // arming → recording
+}
+
+// helper: reaches silence_wait from idle (activation window = 0).
+func enterSilenceWait(sm *StateMachine) {
+	startRecordingSM(sm)
+	sm.ProcessAudio(0.001, 0.02) // recording → silence_wait
+}
+
+// A. Mic activity alone must never start recording.
+func TestScenario_A_MicAloneDoesNotStartRecording(t *testing.T) {
+	sm := New(60*time.Second, 0)
+	sm.SetMicSessionLock(true, 20*time.Second)
+
+	sm.SetMicActive(true) // mic is active, but BlackHole is silent
+
+	for i := 0; i < 5; i++ {
+		action := sm.ProcessAudio(0.001, 0.02) // below threshold
+		if action != ActionNone {
+			t.Errorf("iter %d: mic alone triggered recording, got %s", i, action)
+		}
+	}
+	if sm.CurrentState() != StateIdle {
+		t.Errorf("state: got %s, want idle", sm.CurrentState())
+	}
+}
+
+// B. BlackHole activity starts recording (activation window satisfied).
+func TestScenario_B_BlackHoleStartsRecording(t *testing.T) {
+	sm := New(60*time.Second, 0)
+
+	action1 := sm.ProcessAudio(0.05, 0.02) // idle → arming
+	if action1 != ActionNone {
+		t.Errorf("first buffer: got %s, want none", action1)
+	}
+	if sm.CurrentState() != StateArming {
+		t.Errorf("after first sound: got %s, want arming", sm.CurrentState())
+	}
+
+	action2 := sm.ProcessAudio(0.05, 0.02) // arming → recording (0 ms window)
+	if action2 != ActionStartRecording {
+		t.Errorf("second buffer: got %s, want start_recording", action2)
+	}
+	if sm.CurrentState() != StateRecording {
+		t.Errorf("state: got %s, want recording", sm.CurrentState())
+	}
+}
+
+// C. A brief BlackHole burst shorter than ActivationMs does not start recording.
+func TestScenario_C_ShortBurstDoesNotStart(t *testing.T) {
+	sm := New(60*time.Second, 100*time.Millisecond)
+
+	sm.ProcessAudio(0.05, 0.02) // idle → arming
+
+	// Silence arrives before activation window expires.
+	action := sm.ProcessAudio(0.001, 0.02)
+	if action != ActionNone {
+		t.Errorf("arming cancelled: got %s, want none", action)
+	}
+	if sm.CurrentState() != StateIdle {
+		t.Errorf("state: got %s, want idle", sm.CurrentState())
+	}
+}
+
+// D. A short BlackHole pause during recording does not split the session.
+func TestScenario_D_ShortPauseDoesNotSplit(t *testing.T) {
+	sm := New(60*time.Second, 0) // 60 s silence threshold
+
+	startRecordingSM(sm)
+
+	// First silent buffer — enters silence_wait.
+	action := sm.ProcessAudio(0.001, 0.02)
+	if action != ActionContinue {
+		t.Errorf("silence detected: got %s, want continue", action)
+	}
+	if sm.CurrentState() != StateSilenceWait {
+		t.Errorf("state: got %s, want silence_wait", sm.CurrentState())
+	}
+
+	// More silent buffers — still well inside the 60 s threshold.
+	for i := 0; i < 3; i++ {
+		a := sm.ProcessAudio(0.001, 0.02)
+		if a != ActionContinue {
+			t.Errorf("iter %d: got %s, want continue", i, a)
+		}
+	}
+	if sm.CurrentState() != StateSilenceWait {
+		t.Errorf("state: got %s, want silence_wait (no split yet)", sm.CurrentState())
+	}
+}
+
+// E. Long silence without mic lock finalizes the recording.
+func TestScenario_E_LongSilenceSplitsWithoutMic(t *testing.T) {
+	sm := New(10*time.Millisecond, 0)
+
+	startRecordingSM(sm)
+	sm.ProcessAudio(0.001, 0.02) // → silence_wait
+
+	time.Sleep(15 * time.Millisecond)
+
+	action := sm.ProcessAudio(0.001, 0.02)
+	if action != ActionStopRecording {
+		t.Errorf("got %s, want stop_recording", action)
+	}
+	if sm.CurrentState() != StateFinalizing {
+		t.Errorf("state: got %s, want finalizing", sm.CurrentState())
+	}
+}
+
+// F. Mic lock prevents splitting even when silence threshold is exceeded.
+func TestScenario_F_MicLockPreventsSplit(t *testing.T) {
+	sm := New(10*time.Millisecond, 0)
+	sm.SetMicSessionLock(true, 50*time.Millisecond)
+
+	enterSilenceWait(sm)
+	sm.SetMicActive(true) // lock engaged
+
+	time.Sleep(15 * time.Millisecond) // silence threshold exceeded
+
+	action := sm.ProcessAudio(0.001, 0.02)
+	if action != ActionContinue {
+		t.Errorf("mic lock should prevent split: got %s, want continue", action)
+	}
+	if sm.CurrentState() != StateSilenceWait {
+		t.Errorf("state: got %s, want silence_wait", sm.CurrentState())
+	}
+}
+
+// G. Mic release debounce prevents split immediately after mic goes inactive.
+func TestScenario_G_MicReleaseDebouncePreventsSplit(t *testing.T) {
+	sm := New(10*time.Millisecond, 0)
+	sm.SetMicSessionLock(true, 50*time.Millisecond) // 50 ms debounce
+
+	enterSilenceWait(sm)
+	sm.SetMicActive(true)  // lock on
+	sm.SetMicActive(false) // debounce starts
+
+	// Silence threshold (10 ms) has passed, but debounce (50 ms) has not.
+	time.Sleep(15 * time.Millisecond)
+
+	action := sm.ProcessAudio(0.001, 0.02)
+	if action != ActionContinue {
+		t.Errorf("debounce should still hold: got %s, want continue", action)
+	}
+	if sm.CurrentState() != StateSilenceWait {
+		t.Errorf("state: got %s, want silence_wait", sm.CurrentState())
+	}
+}
+
+// H. Split happens after both silence and release debounce have expired.
+func TestScenario_H_SplitAfterReleaseDebounceExpires(t *testing.T) {
+	sm := New(10*time.Millisecond, 0)
+	sm.SetMicSessionLock(true, 20*time.Millisecond)
+
+	enterSilenceWait(sm)
+	sm.SetMicActive(true)  // lock on
+	sm.SetMicActive(false) // debounce starts
+
+	// Both silence (10 ms) and debounce (20 ms) have expired.
+	time.Sleep(30 * time.Millisecond)
+
+	action := sm.ProcessAudio(0.001, 0.02)
+	if action != ActionStopRecording {
+		t.Errorf("both expired: got %s, want stop_recording", action)
+	}
+	if sm.CurrentState() != StateFinalizing {
+		t.Errorf("state: got %s, want finalizing", sm.CurrentState())
+	}
+}
+
+// I. BlackHole returning during silence_wait resumes the same session.
+func TestScenario_I_BlackHoleReturnsInSilenceWait(t *testing.T) {
+	sm := New(60*time.Second, 0)
+
+	enterSilenceWait(sm)
+
+	// BlackHole becomes active again.
+	action := sm.ProcessAudio(0.05, 0.02)
+	if action != ActionContinue {
+		t.Errorf("sound resume: got %s, want continue", action)
+	}
+	if sm.CurrentState() != StateRecording {
+		t.Errorf("state: got %s, want recording", sm.CurrentState())
+	}
+}
+
+// J. Multiple BlackHole/mic toggles do not corrupt state or produce
+// duplicate start/stop calls.
+func TestScenario_J_MultipleTogglesDoNotCorruptState(t *testing.T) {
+	sm := New(10*time.Millisecond, 0)
+	sm.SetMicSessionLock(true, 20*time.Millisecond)
+
+	var starts, stops int
+
+	// Start recording.
+	sm.ProcessAudio(0.05, 0.02)
+	if a := sm.ProcessAudio(0.05, 0.02); a == ActionStartRecording {
+		starts++
+	}
+
+	// BlackHole silent → silence_wait; mic holds it open.
+	sm.ProcessAudio(0.001, 0.02)
+	sm.SetMicActive(true)
+
+	// BlackHole returns → back to recording.
+	sm.ProcessAudio(0.05, 0.02)
+
+	// BlackHole silent again; mic deactivates.
+	sm.ProcessAudio(0.001, 0.02)
+	sm.SetMicActive(false) // debounce starts (20 ms)
+
+	// 5 ms into debounce: still held.
+	time.Sleep(5 * time.Millisecond)
+	a := sm.ProcessAudio(0.001, 0.02)
+	if a == ActionStopRecording {
+		t.Error("debounce should still hold at 5ms, got stop_recording")
+	}
+
+	// Both silence (10 ms) and debounce (20 ms) expired.
+	time.Sleep(25 * time.Millisecond)
+	if a := sm.ProcessAudio(0.001, 0.02); a == ActionStopRecording {
+		stops++
+	}
+
+	if starts != 1 {
+		t.Errorf("expected 1 start, got %d", starts)
+	}
+	if stops != 1 {
+		t.Errorf("expected 1 stop, got %d", stops)
+	}
+	if sm.CurrentState() != StateFinalizing {
+		t.Errorf("final state: got %s, want finalizing", sm.CurrentState())
+	}
+}

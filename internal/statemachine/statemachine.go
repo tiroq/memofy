@@ -69,8 +69,15 @@ type StateMachine struct {
 	silenceDuration    time.Duration // configurable silence threshold
 	activationDuration time.Duration // consecutive sound required to start recording
 
+	// Mic session lock: keeps the current recording alive while mic is in use.
+	micSessionLock  bool          // feature enabled flag
+	micLockActive   bool          // lock is currently in effect
+	micReleaseSince time.Time     // non-zero: release debounce timer is running
+	micReleaseDur   time.Duration // how long to hold after mic goes inactive
+
 	// Callbacks
 	onStateChange func(from, to State)
+	logFn         func(string, ...any)
 }
 
 // New creates a state machine with the given silence threshold and activation window.
@@ -146,6 +153,8 @@ func (sm *StateMachine) ProcessAudio(rmsLevel float64, threshold float64) Action
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
+	sm.resolveMicRelease()
+
 	hasSound := rmsLevel >= threshold
 
 	switch sm.state {
@@ -153,6 +162,7 @@ func (sm *StateMachine) ProcessAudio(rmsLevel float64, threshold float64) Action
 		if hasSound {
 			sm.armingStart = time.Now()
 			sm.transition(StateArming)
+			sm.logf("state=arming reason=blackhole_active")
 			return ActionNone
 		}
 		return ActionNone
@@ -161,11 +171,13 @@ func (sm *StateMachine) ProcessAudio(rmsLevel float64, threshold float64) Action
 		if !hasSound {
 			sm.armingStart = time.Time{}
 			sm.transition(StateIdle)
+			sm.logf("state=idle reason=arming_cancelled_blackhole_silent")
 			return ActionNone
 		}
 		if time.Since(sm.armingStart) >= sm.activationDuration {
 			sm.recordingStart = time.Now()
 			sm.transition(StateRecording)
+			sm.logf("state=recording action=start_recording reason=activation_window_met")
 			return ActionStartRecording
 		}
 		return ActionNone
@@ -177,6 +189,7 @@ func (sm *StateMachine) ProcessAudio(rmsLevel float64, threshold float64) Action
 		// Silence detected — enter silence_wait
 		sm.silenceStart = time.Now()
 		sm.transition(StateSilenceWait)
+		sm.logf("state=silence_wait reason=blackhole_inactive")
 		return ActionContinue // keep recording during silence_wait
 
 	case StateSilenceWait:
@@ -184,10 +197,17 @@ func (sm *StateMachine) ProcessAudio(rmsLevel float64, threshold float64) Action
 			// Sound resumed — back to recording
 			sm.silenceStart = time.Time{}
 			sm.transition(StateRecording)
+			sm.logf("state=recording reason=blackhole_active_resumed")
+			return ActionContinue
+		}
+		// Mic lock holds the session open regardless of silence duration.
+		if sm.micLockActive {
+			sm.logf("state=silence_wait mic_lock=true silence=%s", time.Since(sm.silenceStart).Truncate(time.Second))
 			return ActionContinue
 		}
 		// Still silent — check threshold
 		if time.Since(sm.silenceStart) >= sm.silenceDuration {
+			sm.logf("action=stop_recording reason=silence_timeout_no_mic_lock silence=%s", time.Since(sm.silenceStart).Truncate(time.Second))
 			sm.transition(StateFinalizing)
 			return ActionStopRecording
 		}
@@ -213,6 +233,8 @@ func (sm *StateMachine) Reset() {
 	sm.recordingStart = time.Time{}
 	sm.silenceStart = time.Time{}
 	sm.armingStart = time.Time{}
+	sm.micLockActive = false
+	sm.micReleaseSince = time.Time{}
 }
 
 // EnterError transitions to the error state.
@@ -220,6 +242,83 @@ func (sm *StateMachine) EnterError() {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.transition(StateError)
+}
+
+// SetMicSessionLock enables or disables the microphone session lock feature.
+// When enabled, an active microphone prevents the recording from being split
+// even if BlackHole has been silent for longer than SilenceSplitSeconds.
+// releaseDur is the debounce period: the lock stays active for this long after
+// mic goes inactive, preventing split jitter from brief mic toggles.
+func (sm *StateMachine) SetMicSessionLock(enabled bool, releaseDur time.Duration) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.micSessionLock = enabled
+	sm.micReleaseDur = releaseDur
+}
+
+// SetLogger sets a printf-style logging function for state machine transitions.
+// The engine wires this to its own logger so all SM events appear in the log.
+func (sm *StateMachine) SetLogger(fn func(string, ...any)) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.logFn = fn
+}
+
+// SetMicActive updates microphone activity and manages the session lock.
+// Call this whenever the monitor detects a mic-usage change.
+//
+//   - active=true  → immediately activates (or re-activates) the session lock.
+//   - active=false → starts the release debounce timer; the lock stays active
+//     until MicReleaseSeconds expires or mic becomes active again.
+//
+// Microphone activity alone never starts recording — it only keeps an already
+// running session alive through BlackHole-silent pauses.
+func (sm *StateMachine) SetMicActive(active bool) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if !sm.micSessionLock {
+		return
+	}
+	if active {
+		sm.micReleaseSince = time.Time{} // cancel any pending release
+		if !sm.micLockActive {
+			sm.micLockActive = true
+			sm.logf("mic_lock=true reason=mic_active")
+		}
+	} else {
+		if sm.micLockActive && sm.micReleaseSince.IsZero() {
+			sm.micReleaseSince = time.Now()
+			sm.logf("mic_lock=pending reason=mic_inactive release_debounce=%s", sm.micReleaseDur)
+		}
+	}
+}
+
+// MicLockActive returns whether the microphone session lock is currently
+// holding the recording session open.
+func (sm *StateMachine) MicLockActive() bool {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.micLockActive
+}
+
+// resolveMicRelease checks whether the mic release debounce timer has expired
+// and clears the session lock if so. Must be called with sm.mu write-lock held.
+func (sm *StateMachine) resolveMicRelease() {
+	if !sm.micLockActive || sm.micReleaseSince.IsZero() {
+		return
+	}
+	if time.Since(sm.micReleaseSince) >= sm.micReleaseDur {
+		sm.micLockActive = false
+		sm.micReleaseSince = time.Time{}
+		sm.logf("mic_lock=false reason=release_debounce_expired")
+	}
+}
+
+// logf emits a message via the configured log function, if set.
+func (sm *StateMachine) logf(format string, args ...any) {
+	if sm.logFn != nil {
+		sm.logFn("[sm] "+format, args...)
+	}
 }
 
 // ForceStartRecording immediately transitions from idle or arming to recording.
