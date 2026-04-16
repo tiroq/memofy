@@ -1,4 +1,3 @@
-package engine
 // export_test.go exposes internal Engine state for white-box tests.
 package engine
 

@@ -18,19 +18,13 @@ import (
 	"github.com/tiroq/memofy/internal/wav"
 )
 
-// micActiveThreshold is used as the effective RMS threshold when a meeting app
-// is actively using the microphone. 0.0 ensures the state machine treats every
-// buffer as "sound" — including the literal digital silence (all-zero samples)
-// that BlackHole produces when no audio is playing through the system.
-const micActiveThreshold = 0.0
-
 // deviceSwitchReq is sent from pollMonitor to loop() via deviceSwitchCh to
-// request switching to a different capture device and/or force-starting a
-// recording. All stream lifecycle operations are handled inside loop() so that
-// stream.Close() can never race with an active stream.Read() call.
+// request switching to a different capture device. All stream lifecycle
+// operations are handled inside loop() so that stream.Close() can never race
+// with an active stream.Read() call.
+// deviceSwitchReq is sent from pollMonitor to loop() via deviceSwitchCh.
 type deviceSwitchReq struct {
-	device   *audio.DeviceInfo // non-nil to open a new capture device
-	startRec bool              // true to call ForceStartRecording after the switch
+	device *audio.DeviceInfo // non-nil to open a new capture device
 }
 
 // Engine is the main recording controller.
@@ -77,9 +71,13 @@ func New(cfg config.Config, logger *log.Logger) *Engine {
 	}
 	silenceDur := time.Duration(cfg.Audio.SilenceSeconds) * time.Second
 	activationDur := time.Duration(cfg.Audio.ActivationMs) * time.Millisecond
+	sm := statemachine.New(silenceDur, activationDur)
+	releaseDur := time.Duration(cfg.Monitoring.MicReleaseSeconds) * time.Second
+	sm.SetMicSessionLock(cfg.Monitoring.MicSessionLock, releaseDur)
+	sm.SetLogger(logger.Printf)
 	return &Engine{
 		cfg:            cfg,
-		sm:             statemachine.New(silenceDur, activationDur),
+		sm:             sm,
 		mon:            monitor.New(),
 		logger:         logger,
 		stopCh:         make(chan struct{}),
@@ -284,14 +282,10 @@ func (e *Engine) loop() {
 			peakRMS = 0
 			lastRMSLog = time.Now()
 		}
-		// When a meeting app is using the microphone, override the threshold to
-		// near-zero so recording starts immediately and silence splitting is
-		// suppressed for the duration of the meeting.
-		effectiveThreshold := e.cfg.Audio.Threshold
-		if e.isMicActive() {
-			effectiveThreshold = micActiveThreshold
-		}
-		action := e.sm.ProcessAudio(rms, effectiveThreshold)
+		// BlackHole RMS is the sole trigger for recording start/stop decisions.
+		// Mic activity is handled via the state machine's session lock, not by
+		// overriding the threshold here.
+		action := e.sm.ProcessAudio(rms, e.cfg.Audio.Threshold)
 		switch action {
 		case statemachine.ActionStartRecording:
 			e.startRecording()
@@ -321,19 +315,22 @@ func (e *Engine) pollMonitor() {
 			e.monSnapshot = snap
 			e.mu.Unlock()
 			if !prevMicActive && snap.MicActive {
-				e.logger.Printf("[monitor] mic became active — queuing device switch")
-				// Send a device switch request to loop(). Meeting-specific virtual
-				// devices (e.g. "Microsoft Teams Audio") are preferred over BlackHole
-				// because BlackHole only captures system audio output.
-				// loop() handles all stream lifecycle work to avoid races with Read().
-				req := deviceSwitchReq{device: audio.FindMeetingAudioDevice(), startRec: true}
-				select {
-				case e.deviceSwitchCh <- req:
-				default:
-					e.logger.Printf("[monitor] device switch request dropped: channel full")
+				e.logger.Printf("[monitor] mic became active — activating session lock")
+				e.sm.SetMicActive(true)
+				// Switch to a meeting-specific capture device if available.
+				// This is an audio-routing decision only; recording start is driven
+				// by BlackHole activity, not mic detection.
+				if meetDev := audio.FindMeetingAudioDevice(); meetDev != nil {
+					req := deviceSwitchReq{device: meetDev}
+					select {
+					case e.deviceSwitchCh <- req:
+					default:
+						e.logger.Printf("[monitor] device switch request dropped: channel full")
+					}
 				}
 			} else if prevMicActive && !snap.MicActive {
-				e.logger.Printf("[monitor] mic became inactive — resuming normal threshold")
+				e.logger.Printf("[monitor] mic became inactive — starting session lock release debounce")
+				e.sm.SetMicActive(false)
 			}
 		}
 	}
@@ -476,11 +473,6 @@ func (e *Engine) handleDeviceSwitch(req deviceSwitchReq) []float32 {
 			}
 			newBuf = make([]float32, newStream.FramesPerBuffer()*newStream.Channels())
 			e.logger.Printf("[engine] capture device switched to %q", req.device.Name)
-		}
-	}
-	if req.startRec {
-		if e.sm.ForceStartRecording() == statemachine.ActionStartRecording {
-			e.startRecording()
 		}
 	}
 	return newBuf
