@@ -98,6 +98,10 @@ func (m *Monitor) Poll() Snapshot {
 	if micdetect.IsSupported() {
 		if ids, err := micdetect.ActiveMicUserBundleIDs(); err == nil {
 			micBundleIDs = ids
+			// Filter out system/background processes that continuously access
+			// the microphone (e.g. CoreSpeech for Siri). Without this filter
+			// micActive would be permanently true, preventing real meeting-app
+			// transitions from firing.
 			for _, id := range ids {
 				if !isMicNoiseBundle(id) {
 					micActive = true
