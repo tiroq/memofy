@@ -8,3 +8,6 @@ func (e *Engine) DeviceSwitchChCap() int { return cap(e.deviceSwitchCh) }
 
 // IsMicActive exposes the private isMicActive() method for tests.
 func (e *Engine) IsMicActive() bool { return e.isMicActive() }
+
+// ValidateWAVFile exposes the private validateWAVFile function for tests.
+func ValidateWAVFile(path string) bool { return validateWAVFile(path) }

@@ -69,6 +69,12 @@ type StateMachine struct {
 	silenceDuration    time.Duration // configurable silence threshold
 	activationDuration time.Duration // consecutive sound required to start recording
 
+	// Threshold hysteresis: enterThreshold is used when idle/arming (higher),
+	// exitThreshold is used when recording/silence_wait (lower). This prevents
+	// flapping between recording and idle on borderline signal levels.
+	enterThreshold float64
+	exitThreshold  float64
+
 	// Mic session lock: keeps the current recording alive while mic is in use.
 	micSessionLock  bool          // feature enabled flag
 	micLockActive   bool          // lock is currently in effect
@@ -94,6 +100,16 @@ func (sm *StateMachine) SetOnStateChange(fn func(from, to State)) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.onStateChange = fn
+}
+
+// SetThresholds configures the hysteresis thresholds. enterThreshold is used
+// to detect sound when idle/arming, exitThreshold is used to detect silence
+// when recording/silence_wait. exitThreshold must be <= enterThreshold.
+func (sm *StateMachine) SetThresholds(enter, exit float64) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.enterThreshold = enter
+	sm.exitThreshold = exit
 }
 
 // State returns the current state.
@@ -149,13 +165,36 @@ func (a Action) String() string {
 
 // ProcessAudio evaluates the current RMS level and returns an action.
 // threshold is the RMS level above which audio is considered "sound".
+// When hysteresis thresholds are configured via SetThresholds, the threshold
+// parameter is ignored and the enter/exit pair is used instead.
 func (sm *StateMachine) ProcessAudio(rmsLevel float64, threshold float64) Action {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
 	sm.resolveMicRelease()
 
-	hasSound := rmsLevel >= threshold
+	// Determine effective thresholds. If hysteresis is configured, use
+	// enter/exit thresholds based on current state. Otherwise, use the
+	// single threshold for both entry and exit.
+	enterTh := threshold
+	exitTh := threshold
+	if sm.enterThreshold > 0 {
+		enterTh = sm.enterThreshold
+		exitTh = sm.exitThreshold
+		if exitTh <= 0 {
+			exitTh = enterTh
+		}
+	}
+
+	// Use enter threshold when deciding to start recording (idle/arming),
+	// exit threshold when deciding to stop (recording/silence_wait).
+	var hasSound bool
+	switch sm.state {
+	case StateIdle, StateArming:
+		hasSound = rmsLevel >= enterTh
+	default:
+		hasSound = rmsLevel >= exitTh
+	}
 
 	switch sm.state {
 	case StateIdle:

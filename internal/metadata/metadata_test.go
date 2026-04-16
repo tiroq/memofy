@@ -186,3 +186,184 @@ func TestWritePreexistingSessionID(t *testing.T) {
 		t.Errorf("session_id: got %s, want custom-session-123", got.SessionID)
 	}
 }
+
+// --- SessionDiagnostics tests ---
+
+func TestSessionDiagnostics_RecordRMS(t *testing.T) {
+	var d SessionDiagnostics
+
+	d.RecordRMS(0.01)
+	d.RecordRMS(0.05)
+	d.RecordRMS(0.03)
+
+	if d.RMSPeak != 0.05 {
+		t.Errorf("RMSPeak: got %f, want 0.05", d.RMSPeak)
+	}
+	if d.RMSCount != 3 {
+		t.Errorf("RMSCount: got %d, want 3", d.RMSCount)
+	}
+	if d.RMSSum != 0.09 {
+		t.Errorf("RMSSum: got %f, want 0.09", d.RMSSum)
+	}
+}
+
+func TestSessionDiagnostics_Finalize_HasMeaningfulAudio(t *testing.T) {
+	tests := []struct {
+		name           string
+		framesWritten  int64
+		bytesWritten   int64
+		rmsPeak        float64
+		minRMS         float64
+		wantMeaningful bool
+	}{
+		{
+			name:           "all valid",
+			framesWritten:  1000,
+			bytesWritten:   100,
+			rmsPeak:        0.05,
+			minRMS:         0.01,
+			wantMeaningful: true,
+		},
+		{
+			name:           "no frames written",
+			framesWritten:  0,
+			bytesWritten:   100,
+			rmsPeak:        0.05,
+			minRMS:         0.01,
+			wantMeaningful: false,
+		},
+		{
+			name:           "only WAV header bytes",
+			framesWritten:  1,
+			bytesWritten:   44,
+			rmsPeak:        0.05,
+			minRMS:         0.01,
+			wantMeaningful: false,
+		},
+		{
+			name:           "RMS below min",
+			framesWritten:  1000,
+			bytesWritten:   100,
+			rmsPeak:        0.005,
+			minRMS:         0.01,
+			wantMeaningful: false,
+		},
+		{
+			name:           "exactly at boundary bytes",
+			framesWritten:  1,
+			bytesWritten:   45,
+			rmsPeak:        0.01,
+			minRMS:         0.01,
+			wantMeaningful: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := SessionDiagnostics{
+				FramesWritten: tt.framesWritten,
+				BytesWritten:  tt.bytesWritten,
+				RMSPeak:       tt.rmsPeak,
+			}
+			d.Finalize(tt.minRMS)
+			if d.HasMeaningfulAudio != tt.wantMeaningful {
+				t.Errorf("HasMeaningfulAudio: got %v, want %v", d.HasMeaningfulAudio, tt.wantMeaningful)
+			}
+		})
+	}
+}
+
+func TestSessionDiagnostics_Finalize_Average(t *testing.T) {
+	var d SessionDiagnostics
+	d.RecordRMS(0.02)
+	d.RecordRMS(0.04)
+	d.RecordRMS(0.06)
+	d.FramesWritten = 100
+	d.BytesWritten = 200
+
+	d.Finalize(0.01)
+
+	want := 0.04 // (0.02 + 0.04 + 0.06) / 3
+	if d.RMSAverage < want-0.001 || d.RMSAverage > want+0.001 {
+		t.Errorf("RMSAverage: got %f, want ~%f", d.RMSAverage, want)
+	}
+}
+
+func TestSessionDiagnostics_Finalize_ZeroCount(t *testing.T) {
+	var d SessionDiagnostics
+	d.Finalize(0.01)
+	if d.RMSAverage != 0 {
+		t.Errorf("RMSAverage with zero count: got %f, want 0", d.RMSAverage)
+	}
+}
+
+func TestFinalizationReasonConstants(t *testing.T) {
+	// Verify all reason constants are distinct non-empty strings.
+	reasons := []FinalizationReason{
+		ReasonSilenceTimeout,
+		ReasonManualStop,
+		ReasonShutdown,
+		ReasonDeviceLost,
+		ReasonError,
+		ReasonDiscardedShort,
+		ReasonDiscardedEmpty,
+	}
+	seen := make(map[FinalizationReason]bool)
+	for _, r := range reasons {
+		if r == "" {
+			t.Errorf("empty finalization reason")
+		}
+		if seen[r] {
+			t.Errorf("duplicate finalization reason: %s", r)
+		}
+		seen[r] = true
+	}
+}
+
+func TestWriteDiagnosticsFields(t *testing.T) {
+	dir := t.TempDir()
+	wavPath := dir + "/diag_test.wav"
+	os.WriteFile(wavPath, []byte("fake"), 0644)
+
+	meta := Recording{
+		StartedAt:          time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC),
+		EndedAt:            time.Date(2026, 1, 1, 10, 5, 0, 0, time.UTC),
+		FinalizationReason: ReasonSilenceTimeout,
+		FramesReceived:     44100,
+		FramesWritten:      40000,
+		BytesWritten:       80000,
+		RMSPeak:            0.15,
+		RMSAverage:         0.03,
+		HasMeaningfulAudio: true,
+	}
+
+	if err := Write(wavPath, meta); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	data, _ := os.ReadFile(dir + "/diag_test.json")
+	var got Recording
+	json.Unmarshal(data, &got)
+
+	if got.FinalizationReason != ReasonSilenceTimeout {
+		t.Errorf("finalization_reason: got %s, want %s", got.FinalizationReason, ReasonSilenceTimeout)
+	}
+	if got.FramesReceived != 44100 {
+		t.Errorf("frames_received: got %d, want 44100", got.FramesReceived)
+	}
+	if got.FramesWritten != 40000 {
+		t.Errorf("frames_written: got %d, want 40000", got.FramesWritten)
+	}
+	if got.BytesWritten != 80000 {
+		t.Errorf("bytes_written: got %d, want 80000", got.BytesWritten)
+	}
+	if got.RMSPeak != 0.15 {
+		t.Errorf("rms_peak: got %f, want 0.15", got.RMSPeak)
+	}
+	if got.RMSAverage != 0.03 {
+		t.Errorf("rms_average: got %f, want 0.03", got.RMSAverage)
+	}
+	if !got.HasMeaningfulAudio {
+		t.Error("has_meaningful_audio: got false, want true")
+	}
+}

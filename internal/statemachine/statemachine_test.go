@@ -198,6 +198,108 @@ func TestArmingCancelledBySilence(t *testing.T) {
 	}
 }
 
+// --- Threshold hysteresis tests ---
+
+func TestHysteresis_EnterThresholdRequiredToStart(t *testing.T) {
+	sm := New(60*time.Second, 0)
+	sm.SetThresholds(0.05, 0.01)
+
+	// RMS between exit and enter thresholds — should NOT trigger arming.
+	action := sm.ProcessAudio(0.03, 0.02)
+	if action != ActionNone {
+		t.Errorf("below enter threshold: got %s, want %s", action, ActionNone)
+	}
+	if sm.CurrentState() != StateIdle {
+		t.Errorf("state: got %s, want %s", sm.CurrentState(), StateIdle)
+	}
+
+	// RMS at enter threshold — should trigger arming.
+	action = sm.ProcessAudio(0.05, 0.02)
+	if sm.CurrentState() != StateArming {
+		t.Errorf("at enter threshold: got %s, want %s", sm.CurrentState(), StateArming)
+	}
+
+	// Continue above enter → start recording.
+	action = sm.ProcessAudio(0.05, 0.02)
+	if action != ActionStartRecording {
+		t.Errorf("second buffer: got %s, want %s", action, ActionStartRecording)
+	}
+}
+
+func TestHysteresis_ExitThresholdUsedDuringRecording(t *testing.T) {
+	sm := New(60*time.Second, 0)
+	sm.SetThresholds(0.05, 0.01)
+
+	// Start recording.
+	sm.ProcessAudio(0.05, 0.02)
+	sm.ProcessAudio(0.05, 0.02)
+	if sm.CurrentState() != StateRecording {
+		t.Fatalf("expected recording, got %s", sm.CurrentState())
+	}
+
+	// RMS between exit (0.01) and enter (0.05) — should CONTINUE recording
+	// because exit threshold is the one used during recording.
+	action := sm.ProcessAudio(0.03, 0.02)
+	if action != ActionContinue {
+		t.Errorf("between thresholds: got %s, want %s", action, ActionContinue)
+	}
+	if sm.CurrentState() != StateRecording {
+		t.Errorf("state: got %s, want %s", sm.CurrentState(), StateRecording)
+	}
+
+	// RMS below exit threshold → silence_wait.
+	action = sm.ProcessAudio(0.005, 0.02)
+	if action != ActionContinue {
+		t.Errorf("below exit: got %s, want %s", action, ActionContinue)
+	}
+	if sm.CurrentState() != StateSilenceWait {
+		t.Errorf("state: got %s, want %s", sm.CurrentState(), StateSilenceWait)
+	}
+}
+
+func TestHysteresis_SilenceWaitUsesExitThreshold(t *testing.T) {
+	sm := New(60*time.Second, 0)
+	sm.SetThresholds(0.05, 0.01)
+
+	// Start recording and enter silence_wait.
+	sm.ProcessAudio(0.05, 0.02)
+	sm.ProcessAudio(0.05, 0.02)
+	sm.ProcessAudio(0.005, 0.02) // → silence_wait
+	if sm.CurrentState() != StateSilenceWait {
+		t.Fatalf("expected silence_wait, got %s", sm.CurrentState())
+	}
+
+	// RMS between exit and enter — should resume recording because
+	// silence_wait uses exit threshold (0.01), and 0.015 >= 0.01.
+	action := sm.ProcessAudio(0.015, 0.02)
+	if action != ActionContinue {
+		t.Errorf("resume from silence: got %s, want %s", action, ActionContinue)
+	}
+	if sm.CurrentState() != StateRecording {
+		t.Errorf("state: got %s, want %s", sm.CurrentState(), StateRecording)
+	}
+}
+
+func TestHysteresis_FallbackToSingleThreshold(t *testing.T) {
+	sm := New(60*time.Second, 0)
+	// No SetThresholds call — should use threshold param as both enter and exit.
+
+	// 0.015 < 0.02 threshold → no arming.
+	action := sm.ProcessAudio(0.015, 0.02)
+	if action != ActionNone {
+		t.Errorf("below threshold: got %s, want %s", action, ActionNone)
+	}
+	if sm.CurrentState() != StateIdle {
+		t.Errorf("state: got %s, want %s", sm.CurrentState(), StateIdle)
+	}
+
+	// 0.02 >= 0.02 → arming.
+	sm.ProcessAudio(0.02, 0.02)
+	if sm.CurrentState() != StateArming {
+		t.Errorf("at threshold: got %s, want %s", sm.CurrentState(), StateArming)
+	}
+}
+
 // --- ForceStartRecording tests ---
 
 func TestForceStartRecording_FromIdle(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -49,9 +50,10 @@ type Engine struct {
 	monSnapshot      monitor.Snapshot
 	version          string
 	formatSpec       audio.FormatSpec
-	deviceSwitchCh   chan deviceSwitchReq // pollMonitor → loop(): safe stream-switch requests
-	initDevice       *audio.DeviceInfo    // the device selected at Start(); used to switch back after meetings
-	micInactiveSince time.Time            // non-zero while mic is inactive; drives the fallback timeout
+	deviceSwitchCh   chan deviceSwitchReq        // pollMonitor → loop(): safe stream-switch requests
+	initDevice       *audio.DeviceInfo           // the device selected at Start(); used to switch back after meetings
+	micInactiveSince time.Time                   // non-zero while mic is inactive; drives the fallback timeout
+	sessionDiag      metadata.SessionDiagnostics // per-session capture diagnostics
 }
 
 // StatusSnapshot is a point-in-time view of engine state for the UI.
@@ -80,6 +82,13 @@ func New(cfg config.Config, logger *log.Logger) *Engine {
 	releaseDur := time.Duration(cfg.Monitoring.MicReleaseSeconds) * time.Second
 	sm.SetMicSessionLock(cfg.Monitoring.MicSessionLock, releaseDur)
 	sm.SetLogger(logger.Printf)
+
+	// Configure threshold hysteresis if exit threshold is set.
+	enterTh := cfg.Audio.Threshold
+	exitTh := cfg.Audio.ExitThreshold
+	if exitTh > 0 && exitTh < enterTh {
+		sm.SetThresholds(enterTh, exitTh)
+	}
 	return &Engine{
 		cfg:            cfg,
 		sm:             sm,
@@ -187,7 +196,7 @@ func (e *Engine) Stop() {
 	e.running = false
 	close(e.stopCh)
 	e.mu.Unlock()
-	e.finalizeRecording()
+	e.finalizeRecording(metadata.ReasonShutdown)
 	if e.stream != nil {
 		e.stream.Stop()
 		e.stream.Close()
@@ -305,10 +314,25 @@ func (e *Engine) loop() {
 		if rms > peakRMS {
 			peakRMS = rms
 		}
+
+		// Track per-session diagnostics.
+		e.mu.Lock()
+		if e.writer != nil {
+			e.sessionDiag.FramesReceived += int64(len(buf) / e.stream.Channels())
+			e.sessionDiag.RecordRMS(rms)
+			if e.sessionDiag.FirstAudioTimestamp.IsZero() && rms > 0 {
+				e.sessionDiag.FirstAudioTimestamp = time.Now()
+			}
+			if rms > 0 {
+				e.sessionDiag.LastAudioTimestamp = time.Now()
+			}
+		}
+		e.mu.Unlock()
+
 		if time.Since(lastRMSLog) >= 5*time.Second {
 			state := e.sm.CurrentState()
 			micActive := e.isMicActive()
-			e.logger.Printf("[audio] peak_rms=%.6f threshold=%.6f state=%s mic_active=%v", peakRMS, e.cfg.Audio.Threshold, state, micActive)
+			e.logger.Printf("[audio] peak_rms=%.6f threshold=%.4f exit_threshold=%.4f state=%s mic_active=%v", peakRMS, e.cfg.Audio.Threshold, e.cfg.Audio.ExitThreshold, state, micActive)
 			peakRMS = 0
 			lastRMSLog = time.Now()
 		}
@@ -323,14 +347,18 @@ func (e *Engine) loop() {
 		case statemachine.ActionContinue:
 			e.writeAudio(buf)
 		case statemachine.ActionStopRecording:
-			e.finalizeRecording()
+			e.finalizeRecording(metadata.ReasonSilenceTimeout)
 			e.sm.Reset()
 		}
 	}
 }
 
 func (e *Engine) pollMonitor() {
-	ticker := time.NewTicker(5 * time.Second)
+	interval := time.Duration(e.cfg.Monitoring.PollIntervalMs) * time.Millisecond
+	if interval < 1*time.Second {
+		interval = 1 * time.Second
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -421,7 +449,7 @@ func (e *Engine) pollMonitor() {
 					if state == statemachine.StateRecording || state == statemachine.StateSilenceWait {
 						e.logger.Printf("[monitor] fallback finalization: mic inactive for %s, forcing stop",
 							time.Since(micInactiveSince).Truncate(time.Second))
-						e.finalizeRecording()
+						e.finalizeRecording(metadata.ReasonSilenceTimeout)
 						e.sm.Reset()
 					}
 					e.mu.Lock()
@@ -438,6 +466,7 @@ func (e *Engine) startRecording() {
 	defer e.mu.Unlock()
 	now := time.Now()
 	e.recordStart = now
+	e.sessionDiag = metadata.SessionDiagnostics{} // reset diagnostics for new session
 
 	profile := e.cfg.Audio.FormatProfile
 	if profile == "" {
@@ -462,22 +491,38 @@ func (e *Engine) startRecording() {
 func (e *Engine) writeAudio(samples []float32) {
 	e.mu.Lock()
 	w := e.writer
+	ch := 0
+	if e.stream != nil {
+		ch = e.stream.Channels()
+	}
 	e.mu.Unlock()
 	if w == nil {
 		return
 	}
 	if err := w.Write(samples); err != nil {
 		e.logger.Printf("Write error: %v", err)
+		return
 	}
+	// Track write diagnostics.
+	frames := int64(len(samples))
+	if ch > 0 {
+		frames = int64(len(samples)) / int64(ch)
+	}
+	bytesWritten := int64(len(samples)) * 2 // 16-bit PCM = 2 bytes per sample
+	e.mu.Lock()
+	e.sessionDiag.FramesWritten += frames
+	e.sessionDiag.BytesWritten += bytesWritten
+	e.mu.Unlock()
 }
 
-func (e *Engine) finalizeRecording() {
+func (e *Engine) finalizeRecording(reason metadata.FinalizationReason) {
 	e.mu.Lock()
 	w := e.writer
 	file := e.currentFile
 	start := e.recordStart
 	snap := e.monSnapshot
 	spec := e.formatSpec
+	diag := e.sessionDiag
 	e.writer = nil
 	e.currentFile = ""
 	e.mu.Unlock()
@@ -488,19 +533,65 @@ func (e *Engine) finalizeRecording() {
 		e.logger.Printf("Close WAV error: %v", err)
 	}
 
-	finalFile := file
+	// Finalize diagnostics.
+	diag.Finalize(e.cfg.Audio.Threshold * 0.5) // half of enter threshold as minimum meaningful RMS
+	dur := time.Since(start)
 
-	// Convert to M4A if the format profile requires it.
-	if spec.Container == "m4a" {
-		converted, err := audio.ConvertToM4A(file, spec)
-		if err != nil {
-			e.logger.Printf("M4A conversion failed, keeping WAV: %v", err)
-		} else {
-			finalFile = converted
-			e.logger.Printf("Converted to M4A: %s", filepath.Base(converted))
+	// Log session diagnostics.
+	e.logger.Printf("[diag] frames_received=%d frames_written=%d bytes_written=%d rms_peak=%.6f rms_avg=%.6f has_audio=%v",
+		diag.FramesReceived, diag.FramesWritten, diag.BytesWritten, diag.RMSPeak, diag.RMSAverage, diag.HasMeaningfulAudio)
+
+	// Diagnose failure modes.
+	if diag.FramesReceived == 0 {
+		e.logger.Printf("[diag] FAILURE MODE A: file created but no audio buffers received (capture callback not firing or wrong device)")
+		reason = metadata.ReasonDiscardedEmpty
+	} else if diag.FramesWritten == 0 {
+		e.logger.Printf("[diag] FAILURE MODE B: audio buffers received (%d frames) but none written (writer not attached or write path broken)", diag.FramesReceived)
+		reason = metadata.ReasonDiscardedEmpty
+	} else if !diag.HasMeaningfulAudio {
+		e.logger.Printf("[diag] FAILURE MODE C: audio written (%d bytes) but only header/silence (rms_peak=%.6f below threshold)", diag.BytesWritten, diag.RMSPeak)
+		reason = metadata.ReasonDiscardedEmpty
+	}
+
+	// Check minimum session duration.
+	minDur := time.Duration(e.cfg.Session.MinSessionSeconds) * time.Second
+	if minDur > 0 && dur < minDur && reason != metadata.ReasonDiscardedEmpty {
+		e.logger.Printf("[diag] session too short: %s < min %s", dur.Truncate(time.Second), minDur)
+		reason = metadata.ReasonDiscardedShort
+	}
+
+	// WAV integrity check.
+	wavValid := validateWAVFile(file)
+	if !wavValid {
+		e.logger.Printf("[diag] WAV integrity check failed for %s", filepath.Base(file))
+		if reason == metadata.ReasonSilenceTimeout || reason == metadata.ReasonShutdown || reason == metadata.ReasonManualStop {
+			reason = metadata.ReasonDiscardedEmpty
 		}
 	}
 
+	finalFile := file
+	discarded := reason == metadata.ReasonDiscardedEmpty || reason == metadata.ReasonDiscardedShort
+
+	// Convert to M4A if the format profile requires it and session is valid.
+	if spec.Container == "m4a" && !discarded {
+		converted, err := audio.ConvertToM4A(file, spec)
+		if err != nil {
+			e.logger.Printf("[diag] FAILURE MODE D: M4A conversion failed, keeping WAV: %v", err)
+			// Keep source WAV — do not discard.
+		} else {
+			// Validate converted file.
+			info, statErr := os.Stat(converted)
+			if statErr != nil || info.Size() < 100 {
+				e.logger.Printf("[diag] FAILURE MODE D: converted M4A is empty or missing (size=%d), keeping WAV", info.Size())
+				os.Remove(converted)
+			} else {
+				finalFile = converted
+				e.logger.Printf("Converted to M4A: %s", filepath.Base(converted))
+			}
+		}
+	}
+
+	// Write metadata (always, even for discarded sessions — for diagnostics).
 	meta := metadata.Recording{
 		StartedAt:           start,
 		EndedAt:             time.Now(),
@@ -519,14 +610,55 @@ func (e *Engine) finalizeRecording() {
 		BitrateKbps:         spec.BitrateKbps,
 		Threshold:           e.cfg.Audio.Threshold,
 		SilenceSplitSeconds: e.cfg.Audio.SilenceSeconds,
-		SplitReason:         "silence_threshold",
+		SplitReason:         string(reason),
+		FinalizationReason:  reason,
 		AppVersion:          e.version,
+		FramesReceived:      diag.FramesReceived,
+		FramesWritten:       diag.FramesWritten,
+		BytesWritten:        diag.BytesWritten,
+		RMSPeak:             diag.RMSPeak,
+		RMSAverage:          diag.RMSAverage,
+		HasMeaningfulAudio:  diag.HasMeaningfulAudio,
 	}
 	if err := metadata.Write(finalFile, meta); err != nil {
 		e.logger.Printf("Metadata error: %v", err)
 	}
-	dur := time.Since(start).Truncate(time.Second)
-	e.logger.Printf("Finalized: %s (%s)", filepath.Base(finalFile), dur)
+
+	// Delete discarded files if configured.
+	if discarded && e.cfg.Session.DiscardShortSessions {
+		e.logger.Printf("[diag] deleting discarded recording: %s (reason=%s)", filepath.Base(finalFile), reason)
+		os.Remove(finalFile)
+		// Also remove JSON sidecar.
+		jsonPath := strings.TrimSuffix(finalFile, filepath.Ext(finalFile)) + ".json"
+		os.Remove(jsonPath)
+	} else {
+		e.logger.Printf("Finalized: %s (%s) reason=%s has_audio=%v", filepath.Base(finalFile), dur.Truncate(time.Second), reason, diag.HasMeaningfulAudio)
+	}
+}
+
+// validateWAVFile checks basic WAV structural integrity.
+func validateWAVFile(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	header := make([]byte, 44)
+	n, err := f.Read(header)
+	if err != nil || n < 44 {
+		return false
+	}
+	// Check RIFF header.
+	if string(header[0:4]) != "RIFF" || string(header[8:12]) != "WAVE" {
+		return false
+	}
+	// Check data chunk has content beyond header.
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return info.Size() > 44
 }
 
 // handleDeviceSwitch is called exclusively from the loop() goroutine, between

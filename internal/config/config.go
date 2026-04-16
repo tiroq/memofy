@@ -25,7 +25,8 @@ type Config struct {
 type AudioConfig struct {
 	Device              string  `yaml:"device"`                // "auto" or device name substring
 	InputDeviceName     string  `yaml:"input_device_name"`     // alias for device
-	Threshold           float64 `yaml:"threshold"`             // RMS level for sound detection
+	Threshold           float64 `yaml:"threshold"`             // RMS level for sound detection (enter threshold)
+	ExitThreshold       float64 `yaml:"exit_threshold"`        // lower RMS threshold for silence detection (hysteresis)
 	LevelThreshold      float64 `yaml:"level_threshold"`       // alias for threshold
 	SilenceSeconds      int     `yaml:"silence_seconds"`       // seconds of silence before splitting
 	SilenceSplitSeconds int     `yaml:"silence_split_seconds"` // alias for silence_seconds
@@ -40,6 +41,7 @@ type AudioConfig struct {
 // SessionConfig controls recording session behavior.
 type SessionConfig struct {
 	MinSessionSeconds               int  `yaml:"min_session_seconds"`
+	DiscardShortSessions            bool `yaml:"discard_short_sessions"`
 	KeepSingleSessionWhileMicActive bool `yaml:"keep_single_session_while_mic_active"`
 }
 
@@ -89,6 +91,7 @@ func Default() Config {
 			Device:              "auto",
 			InputDeviceName:     "BlackHole",
 			Threshold:           0.02,
+			ExitThreshold:       0.01,
 			LevelThreshold:      0.02,
 			SilenceSeconds:      60,
 			SilenceSplitSeconds: 60,
@@ -100,7 +103,8 @@ func Default() Config {
 			FormatProfile:       "high",
 		},
 		Session: SessionConfig{
-			MinSessionSeconds:               5,
+			MinSessionSeconds:               3,
+			DiscardShortSessions:            true,
 			KeepSingleSessionWhileMicActive: false,
 		},
 		Output: OutputConfig{
