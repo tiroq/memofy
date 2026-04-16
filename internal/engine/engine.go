@@ -24,7 +24,10 @@ import (
 // with an active stream.Read() call.
 // deviceSwitchReq is sent from pollMonitor to loop() via deviceSwitchCh.
 type deviceSwitchReq struct {
-	device *audio.DeviceInfo // non-nil to open a new capture device
+	device   *audio.DeviceInfo // non-nil to open a new capture device
+	startRec bool              // true when the new device is a dedicated meeting device;
+	                          // triggers ForceStartRecording after the switch so the call
+	                          // is captured even if BlackHole is currently silent.
 }
 
 // Engine is the main recording controller.
@@ -317,11 +320,12 @@ func (e *Engine) pollMonitor() {
 			if !prevMicActive && snap.MicActive {
 				e.logger.Printf("[monitor] mic became active — activating session lock")
 				e.sm.SetMicActive(true)
-				// Switch to a meeting-specific capture device if available.
-				// This is an audio-routing decision only; recording start is driven
-				// by BlackHole activity, not mic detection.
+				// If a dedicated meeting audio device exists (e.g. "Microsoft Teams Audio"),
+				// switch to it and start recording immediately: the device change means a
+				// meeting is in progress, even if BlackHole is currently silent.
+				// If no meeting device exists, recording is driven by BlackHole threshold.
 				if meetDev := audio.FindMeetingAudioDevice(); meetDev != nil {
-					req := deviceSwitchReq{device: meetDev}
+					req := deviceSwitchReq{device: meetDev, startRec: true}
 					select {
 					case e.deviceSwitchCh <- req:
 					default:
@@ -473,6 +477,14 @@ func (e *Engine) handleDeviceSwitch(req deviceSwitchReq) []float32 {
 			}
 			newBuf = make([]float32, newStream.FramesPerBuffer()*newStream.Channels())
 			e.logger.Printf("[engine] capture device switched to %q", req.device.Name)
+		}
+	}
+	// Force-start recording only after a successful switch to a dedicated meeting
+	// device. This covers the case where BlackHole is silent at call start (e.g.
+	// no remote audio yet) but the meeting is clearly active.
+	if req.startRec {
+		if e.sm.ForceStartRecording() == statemachine.ActionStartRecording {
+			e.startRecording()
 		}
 	}
 	return newBuf
