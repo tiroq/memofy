@@ -198,6 +198,66 @@ func TestArmingCancelledBySilence(t *testing.T) {
 	}
 }
 
+// --- ForceStartRecording tests ---
+
+func TestForceStartRecording_FromIdle(t *testing.T) {
+	sm := New(60*time.Second, 500*time.Millisecond)
+
+	action := sm.ForceStartRecording()
+	if action != ActionStartRecording {
+		t.Errorf("from idle: got %s, want %s", action, ActionStartRecording)
+	}
+	if sm.CurrentState() != StateRecording {
+		t.Errorf("state after force: got %s, want %s", sm.CurrentState(), StateRecording)
+	}
+}
+
+func TestForceStartRecording_FromArming(t *testing.T) {
+	// activation window is long so the machine stays in arming
+	sm := New(60*time.Second, 10*time.Second)
+	sm.ProcessAudio(0.05, 0.02) // idle → arming
+	if sm.CurrentState() != StateArming {
+		t.Fatalf("expected arming, got %s", sm.CurrentState())
+	}
+
+	action := sm.ForceStartRecording()
+	if action != ActionStartRecording {
+		t.Errorf("from arming: got %s, want %s", action, ActionStartRecording)
+	}
+	if sm.CurrentState() != StateRecording {
+		t.Errorf("state after force from arming: got %s, want %s", sm.CurrentState(), StateRecording)
+	}
+}
+
+func TestForceStartRecording_AlreadyRecording(t *testing.T) {
+	sm := New(60*time.Second, 0)
+	sm.ProcessAudio(0.05, 0.02) // idle → arming
+	sm.ProcessAudio(0.05, 0.02) // arming → recording
+
+	action := sm.ForceStartRecording()
+	if action != ActionNone {
+		t.Errorf("already recording: got %s, want %s", action, ActionNone)
+	}
+	if sm.CurrentState() != StateRecording {
+		t.Errorf("state unchanged: got %s, want %s", sm.CurrentState(), StateRecording)
+	}
+}
+
+func TestForceStartRecording_DuringSilenceWait(t *testing.T) {
+	sm := New(60*time.Second, 0)
+	sm.ProcessAudio(0.05, 0.02)  // idle → arming
+	sm.ProcessAudio(0.05, 0.02)  // arming → recording
+	sm.ProcessAudio(0.001, 0.02) // recording → silence_wait
+
+	action := sm.ForceStartRecording()
+	if action != ActionNone {
+		t.Errorf("silence_wait (still recording): got %s, want %s", action, ActionNone)
+	}
+	if sm.CurrentState() != StateSilenceWait {
+		t.Errorf("state unchanged: got %s, want %s", sm.CurrentState(), StateSilenceWait)
+	}
+}
+
 func TestEventString(t *testing.T) {
 	tests := []struct {
 		event Event

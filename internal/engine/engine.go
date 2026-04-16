@@ -24,25 +24,35 @@ import (
 // that BlackHole produces when no audio is playing through the system.
 const micActiveThreshold = 0.0
 
+// deviceSwitchReq is sent from pollMonitor to loop() via deviceSwitchCh to
+// request switching to a different capture device and/or force-starting a
+// recording. All stream lifecycle operations are handled inside loop() so that
+// stream.Close() can never race with an active stream.Read() call.
+type deviceSwitchReq struct {
+	device   *audio.DeviceInfo // non-nil to open a new capture device
+	startRec bool              // true to call ForceStartRecording after the switch
+}
+
 // Engine is the main recording controller.
 type Engine struct {
-	cfg         config.Config
-	sm          *statemachine.StateMachine
-	mon         *monitor.Monitor
-	stream      *audio.Stream
-	writer      *wav.Writer
-	logger      *log.Logger
-	mu          sync.Mutex
-	running     bool
-	stopCh      chan struct{}
-	recordStart time.Time
-	outputDir   string
-	currentFile string
-	deviceName  string
-	lastError   string
-	monSnapshot monitor.Snapshot
-	version     string
-	formatSpec  audio.FormatSpec
+	cfg            config.Config
+	sm             *statemachine.StateMachine
+	mon            *monitor.Monitor
+	stream         *audio.Stream
+	writer         *wav.Writer
+	logger         *log.Logger
+	mu             sync.Mutex
+	running        bool
+	stopCh         chan struct{}
+	recordStart    time.Time
+	outputDir      string
+	currentFile    string
+	deviceName     string
+	lastError      string
+	monSnapshot    monitor.Snapshot
+	version        string
+	formatSpec     audio.FormatSpec
+	deviceSwitchCh chan deviceSwitchReq // pollMonitor → loop(): safe stream-switch requests
 }
 
 // StatusSnapshot is a point-in-time view of engine state for the UI.
@@ -68,12 +78,13 @@ func New(cfg config.Config, logger *log.Logger) *Engine {
 	silenceDur := time.Duration(cfg.Audio.SilenceSeconds) * time.Second
 	activationDur := time.Duration(cfg.Audio.ActivationMs) * time.Millisecond
 	return &Engine{
-		cfg:        cfg,
-		sm:         statemachine.New(silenceDur, activationDur),
-		mon:        monitor.New(),
-		logger:     logger,
-		stopCh:     make(chan struct{}),
-		formatSpec: audio.GetFormatSpec(cfg.Audio.FormatProfile),
+		cfg:            cfg,
+		sm:             statemachine.New(silenceDur, activationDur),
+		mon:            monitor.New(),
+		logger:         logger,
+		stopCh:         make(chan struct{}),
+		formatSpec:     audio.GetFormatSpec(cfg.Audio.FormatProfile),
+		deviceSwitchCh: make(chan deviceSwitchReq, 1),
 	}
 }
 
@@ -236,8 +247,7 @@ func (e *Engine) isMicActive() bool {
 }
 
 func (e *Engine) loop() {
-	bufSize := e.stream.FramesPerBuffer() * e.stream.Channels()
-	buf := make([]float32, bufSize)
+	buf := make([]float32, e.stream.FramesPerBuffer()*e.stream.Channels())
 
 	// Periodic RMS diagnostics: log peak level every 5 s so problems are visible in the log.
 	var peakRMS float64
@@ -247,6 +257,16 @@ func (e *Engine) loop() {
 		select {
 		case <-e.stopCh:
 			return
+		default:
+		}
+		// Handle any pending device switch sent by pollMonitor.
+		// Processed here — between Read() calls — so Close() on the old stream
+		// cannot race with an active Read().
+		select {
+		case req := <-e.deviceSwitchCh:
+			if newBuf := e.handleDeviceSwitch(req); newBuf != nil {
+				buf = newBuf
+			}
 		default:
 		}
 		if err := e.stream.Read(buf); err != nil {
@@ -301,18 +321,16 @@ func (e *Engine) pollMonitor() {
 			e.monSnapshot = snap
 			e.mu.Unlock()
 			if !prevMicActive && snap.MicActive {
-				e.logger.Printf("[monitor] mic became active — forcing recording start")
-				// Prefer a meeting-specific virtual audio device (e.g. "Microsoft Teams
-				// Audio") over BlackHole, which only captures system audio output.
-				if meetDev := audio.FindMeetingAudioDevice(); meetDev != nil {
-					if err := e.reopenStream(meetDev); err != nil {
-						e.logger.Printf("[monitor] could not switch to meeting device %q: %v", meetDev.Name, err)
-					} else {
-						e.logger.Printf("[monitor] switched capture device to %q", meetDev.Name)
-					}
-				}
-				if e.sm.ForceStartRecording() == statemachine.ActionStartRecording {
-					e.startRecording()
+				e.logger.Printf("[monitor] mic became active — queuing device switch")
+				// Send a device switch request to loop(). Meeting-specific virtual
+				// devices (e.g. "Microsoft Teams Audio") are preferred over BlackHole
+				// because BlackHole only captures system audio output.
+				// loop() handles all stream lifecycle work to avoid races with Read().
+				req := deviceSwitchReq{device: audio.FindMeetingAudioDevice(), startRec: true}
+				select {
+				case e.deviceSwitchCh <- req:
+				default:
+					e.logger.Printf("[monitor] device switch request dropped: channel full")
 				}
 			} else if prevMicActive && !snap.MicActive {
 				e.logger.Printf("[monitor] mic became inactive — resuming normal threshold")
@@ -417,46 +435,55 @@ func (e *Engine) finalizeRecording() {
 	e.logger.Printf("Finalized: %s (%s)", filepath.Base(finalFile), dur)
 }
 
-// reopenStream stops the current audio stream and opens a new one on dev.
-// Must only be called when not currently recording (idle/arming state).
-func (e *Engine) reopenStream(dev *audio.DeviceInfo) error {
-	e.mu.Lock()
-	oldStream := e.stream
-	e.mu.Unlock()
-
-	if oldStream != nil {
-		oldStream.Stop()
-		oldStream.Close()
+// handleDeviceSwitch is called exclusively from the loop() goroutine, between
+// consecutive Read() calls. Because no Read() is in-flight at this point, it
+// is safe to call Close() on the old stream without risking a use-after-free.
+// Returns a replacement audio buffer if the new stream has different geometry,
+// or nil if the buffer can be reused.
+func (e *Engine) handleDeviceSwitch(req deviceSwitchReq) []float32 {
+	var newBuf []float32
+	if req.device != nil {
+		channels := e.cfg.Audio.Channels
+		if channels > req.device.MaxInputCh {
+			channels = req.device.MaxInputCh
+		}
+		sampleRate := e.cfg.Audio.SampleRate
+		if sampleRate == 0 {
+			sampleRate = int(req.device.SampleRate)
+		}
+		newStream, err := audio.OpenStream(audio.CaptureConfig{
+			DeviceIndex:     req.device.Index,
+			SampleRate:      sampleRate,
+			Channels:        channels,
+			FramesPerBuffer: 4096,
+		})
+		if err != nil {
+			e.logger.Printf("[engine] device switch to %q failed: %v", req.device.Name, err)
+		} else if err := newStream.Start(); err != nil {
+			newStream.Close()
+			e.logger.Printf("[engine] start stream on %q failed: %v", req.device.Name, err)
+		} else {
+			old := e.stream
+			e.mu.Lock()
+			e.stream = newStream
+			e.deviceName = req.device.Name
+			e.mu.Unlock()
+			// Stop then Close old stream. We are between Read() calls so Close()
+			// cannot race with an active Read() — this is the key safety guarantee.
+			if old != nil {
+				old.Stop()
+				old.Close()
+			}
+			newBuf = make([]float32, newStream.FramesPerBuffer()*newStream.Channels())
+			e.logger.Printf("[engine] capture device switched to %q", req.device.Name)
+		}
 	}
-
-	channels := e.cfg.Audio.Channels
-	if channels > dev.MaxInputCh {
-		channels = dev.MaxInputCh
+	if req.startRec {
+		if e.sm.ForceStartRecording() == statemachine.ActionStartRecording {
+			e.startRecording()
+		}
 	}
-	sampleRate := e.cfg.Audio.SampleRate
-	if sampleRate == 0 {
-		sampleRate = int(dev.SampleRate)
-	}
-
-	stream, err := audio.OpenStream(audio.CaptureConfig{
-		DeviceIndex:     dev.Index,
-		SampleRate:      sampleRate,
-		Channels:        channels,
-		FramesPerBuffer: 4096,
-	})
-	if err != nil {
-		return fmt.Errorf("open stream on %q: %w", dev.Name, err)
-	}
-	if err := stream.Start(); err != nil {
-		stream.Close()
-		return fmt.Errorf("start stream on %q: %w", dev.Name, err)
-	}
-
-	e.mu.Lock()
-	e.stream = stream
-	e.deviceName = dev.Name
-	e.mu.Unlock()
-	return nil
+	return newBuf
 }
 
 func (e *Engine) findDevice() (*audio.DeviceInfo, error) {
