@@ -16,21 +16,22 @@ func ConvertToM4A(wavPath string, spec FormatSpec) (string, error) {
 	m4aPath := strings.TrimSuffix(wavPath, filepath.Ext(wavPath)) + ".m4a"
 
 	// afconvert is built into macOS — no extra dependencies needed.
-	// -d aac   : AAC codec
-	// -f m4af  : M4A container
-	// -b       : bitrate in bits/sec
-	// -c 1     : mono
-	// --src-rate: target sample rate
+	// -d aac@<rate> : AAC codec at target sample rate (rate embedded in format string)
+	// -f m4af       : M4A container
+	// -b            : bitrate in bits/sec
+	// -c            : channel count
+	dataFormat := "aac"
+	if spec.SampleRate > 0 {
+		dataFormat = fmt.Sprintf("aac@%d", spec.SampleRate)
+	}
+
 	args := []string{
 		wavPath,
 		m4aPath,
-		"-d", "aac",
+		"-d", dataFormat,
 		"-f", "m4af",
 		"-b", fmt.Sprintf("%d", spec.BitrateKbps*1000),
 		"-c", fmt.Sprintf("%d", spec.Channels),
-	}
-	if spec.SampleRate > 0 {
-		args = append(args, "--src-rate", fmt.Sprintf("%d", spec.SampleRate))
 	}
 
 	cmd := exec.Command("afconvert", args...)

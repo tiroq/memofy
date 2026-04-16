@@ -4,6 +4,11 @@ package audio
 
 import "strings"
 
+// FindMeetingAudioDevice is not implemented on Linux.
+func FindMeetingAudioDevice() *DeviceInfo {
+	return nil
+}
+
 // FindSystemAudioDevice finds the best system audio capture device on Linux.
 // It searches for PulseAudio/PipeWire monitor sources (e.g. "Monitor of ...").
 // Falls back to the default input device if no monitor is found.

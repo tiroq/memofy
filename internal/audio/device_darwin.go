@@ -16,3 +16,23 @@ func FindSystemAudioDevice(hint string) *DeviceInfo {
 	// Try partial match
 	return FindDevice(hint)
 }
+
+// meetingDeviceHints are substrings found in virtual audio devices created by
+// meeting applications. Checked in order; first match wins.
+var meetingDeviceHints = []string{
+	"Microsoft Teams Audio",
+	"Teams Audio",
+	"ZoomAudioDevice",
+	"Zoom Audio Device",
+}
+
+// FindMeetingAudioDevice returns a virtual audio device created by a running
+// meeting application, or nil if none is found.
+func FindMeetingAudioDevice() *DeviceInfo {
+	for _, hint := range meetingDeviceHints {
+		if dev := FindDevice(hint); dev != nil {
+			return dev
+		}
+	}
+	return nil
+}
