@@ -293,6 +293,7 @@ import "C"
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"unsafe"
 )
 
@@ -362,6 +363,7 @@ func DefaultInputDevice() (*DeviceInfo, error) {
 
 // Stream captures audio from a CoreAudio input device via AUHAL AudioUnit.
 type Stream struct {
+	mu         sync.Mutex // protects s for concurrent Stop()/Close() calls
 	s          *C.CAStream
 	sampleRate int
 	channels   int
@@ -405,17 +407,25 @@ func (st *Stream) Read(buf []float32) error {
 	return nil
 }
 
-// Stop halts audio capture.
+// Stop halts audio capture. Safe to call concurrently with Close().
 func (st *Stream) Stop() error {
-	C.ca_stream_stop(st.s)
+	st.mu.Lock()
+	s := st.s
+	st.mu.Unlock()
+	if s != nil {
+		C.ca_stream_stop(s)
+	}
 	return nil
 }
 
-// Close releases all resources.
+// Close releases all resources. Safe to call concurrently with Stop().
 func (st *Stream) Close() error {
-	if st.s != nil {
-		C.ca_stream_close(st.s)
-		st.s = nil
+	st.mu.Lock()
+	s := st.s
+	st.s = nil
+	st.mu.Unlock()
+	if s != nil {
+		C.ca_stream_close(s)
 	}
 	return nil
 }
