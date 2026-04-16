@@ -18,10 +18,11 @@ import (
 	"github.com/tiroq/memofy/internal/wav"
 )
 
-// micActiveThreshold is the near-zero RMS threshold used when a meeting app
-// is actively using the microphone. It ensures recording starts immediately
-// and silence splitting is suppressed for the duration of the meeting.
-const micActiveThreshold = 0.000001
+// micActiveThreshold is used as the effective RMS threshold when a meeting app
+// is actively using the microphone. 0.0 ensures the state machine treats every
+// buffer as "sound" — including the literal digital silence (all-zero samples)
+// that BlackHole produces when no audio is playing through the system.
+const micActiveThreshold = 0.0
 
 // Engine is the main recording controller.
 type Engine struct {
@@ -296,14 +297,17 @@ func (e *Engine) pollMonitor() {
 			prevMicActive := e.monSnapshot.MicActive
 			e.logger.Printf("[monitor] zoom_open=%v zoom_call=%v teams_open=%v meet=%v mic_active=%v mic_bundles=%v",
 				snap.ZoomRunning, snap.ZoomInCall, snap.TeamsRunning, snap.MeetRunning, snap.MicActive, snap.MicBundleIDs)
-			if !prevMicActive && snap.MicActive {
-				e.logger.Printf("[monitor] mic became active — forcing recording start")
-			} else if prevMicActive && !snap.MicActive {
-				e.logger.Printf("[monitor] mic became inactive — resuming normal threshold")
-			}
 			e.mu.Lock()
 			e.monSnapshot = snap
 			e.mu.Unlock()
+			if !prevMicActive && snap.MicActive {
+				e.logger.Printf("[monitor] mic became active — forcing recording start")
+				if e.sm.ForceStartRecording() == statemachine.ActionStartRecording {
+					e.startRecording()
+				}
+			} else if prevMicActive && !snap.MicActive {
+				e.logger.Printf("[monitor] mic became inactive — resuming normal threshold")
+			}
 		}
 	}
 }
