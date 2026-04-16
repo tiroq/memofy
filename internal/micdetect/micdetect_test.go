@@ -1,4 +1,3 @@
-package micdetect
 //go:build darwin
 
 package micdetect
