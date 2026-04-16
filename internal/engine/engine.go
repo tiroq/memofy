@@ -338,7 +338,7 @@ func (e *Engine) pollMonitor() {
 				// When none exists, record from the current device (typically BlackHole).
 				// Either way, start recording immediately via the device-switch channel:
 				// a nil device means "keep current device but still force-start".
-				meetDev := audio.FindMeetingAudioDevice()
+				meetDev := audio.FindMeetingAudioDeviceForBundles(snap.MicBundleIDs)
 				req := deviceSwitchReq{device: meetDev, startRec: true}
 				select {
 				case e.deviceSwitchCh <- req:

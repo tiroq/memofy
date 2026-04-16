@@ -4,8 +4,8 @@ package audio
 
 import "strings"
 
-// FindMeetingAudioDevice is not implemented on Linux.
-func FindMeetingAudioDevice() *DeviceInfo {
+// FindMeetingAudioDeviceForBundles is not implemented on Linux.
+func FindMeetingAudioDeviceForBundles(_ []string) *DeviceInfo {
 	return nil
 }
 
