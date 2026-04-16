@@ -18,6 +18,11 @@ import (
 	"github.com/tiroq/memofy/internal/wav"
 )
 
+// micActiveThreshold is the near-zero RMS threshold used when a meeting app
+// is actively using the microphone. It ensures recording starts immediately
+// and silence splitting is suppressed for the duration of the meeting.
+const micActiveThreshold = 0.000001
+
 // Engine is the main recording controller.
 type Engine struct {
 	cfg         config.Config
@@ -222,6 +227,13 @@ func (e *Engine) GetStatus() StatusSnapshot {
 	}
 }
 
+// isMicActive returns whether any meeting app is currently using the microphone.
+func (e *Engine) isMicActive() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.monSnapshot.MicActive
+}
+
 func (e *Engine) loop() {
 	bufSize := e.stream.FramesPerBuffer() * e.stream.Channels()
 	buf := make([]float32, bufSize)
@@ -246,11 +258,19 @@ func (e *Engine) loop() {
 		}
 		if time.Since(lastRMSLog) >= 5*time.Second {
 			state := e.sm.CurrentState()
-			e.logger.Printf("[audio] peak_rms=%.6f threshold=%.6f state=%s", peakRMS, e.cfg.Audio.Threshold, state)
+			micActive := e.isMicActive()
+			e.logger.Printf("[audio] peak_rms=%.6f threshold=%.6f state=%s mic_active=%v", peakRMS, e.cfg.Audio.Threshold, state, micActive)
 			peakRMS = 0
 			lastRMSLog = time.Now()
 		}
-		action := e.sm.ProcessAudio(rms, e.cfg.Audio.Threshold)
+		// When a meeting app is using the microphone, override the threshold to
+		// near-zero so recording starts immediately and silence splitting is
+		// suppressed for the duration of the meeting.
+		effectiveThreshold := e.cfg.Audio.Threshold
+		if e.isMicActive() {
+			effectiveThreshold = micActiveThreshold
+		}
+		action := e.sm.ProcessAudio(rms, effectiveThreshold)
 		switch action {
 		case statemachine.ActionStartRecording:
 			e.startRecording()
@@ -273,8 +293,14 @@ func (e *Engine) pollMonitor() {
 			return
 		case <-ticker.C:
 			snap := e.mon.Poll()
+			prevMicActive := e.monSnapshot.MicActive
 			e.logger.Printf("[monitor] zoom_open=%v zoom_call=%v teams_open=%v meet=%v mic_active=%v mic_bundles=%v",
 				snap.ZoomRunning, snap.ZoomInCall, snap.TeamsRunning, snap.MeetRunning, snap.MicActive, snap.MicBundleIDs)
+			if !prevMicActive && snap.MicActive {
+				e.logger.Printf("[monitor] mic became active — forcing recording start")
+			} else if prevMicActive && !snap.MicActive {
+				e.logger.Printf("[monitor] mic became inactive — resuming normal threshold")
+			}
 			e.mu.Lock()
 			e.monSnapshot = snap
 			e.mu.Unlock()
