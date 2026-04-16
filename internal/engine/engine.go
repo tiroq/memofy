@@ -273,8 +273,8 @@ func (e *Engine) pollMonitor() {
 			return
 		case <-ticker.C:
 			snap := e.mon.Poll()
-			e.logger.Printf("[monitor] zoom_open=%v zoom_call=%v teams_open=%v meet=%v mic_active=%v",
-				snap.ZoomRunning, snap.ZoomInCall, snap.TeamsRunning, snap.MeetRunning, snap.MicActive)
+			e.logger.Printf("[monitor] zoom_open=%v zoom_call=%v teams_open=%v meet=%v mic_active=%v mic_bundles=%v",
+				snap.ZoomRunning, snap.ZoomInCall, snap.TeamsRunning, snap.MeetRunning, snap.MicActive, snap.MicBundleIDs)
 			e.mu.Lock()
 			e.monSnapshot = snap
 			e.mu.Unlock()
@@ -354,6 +354,7 @@ func (e *Engine) finalizeRecording() {
 		StartedAt:           start,
 		EndedAt:             time.Now(),
 		MicActive:           snap.MicActive,
+		MicBundleIDs:        snap.MicBundleIDs,
 		ZoomRunning:         snap.ZoomRunning,
 		TeamsRunning:        snap.TeamsRunning,
 		MeetRunning:         snap.MeetRunning,
