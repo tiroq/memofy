@@ -59,10 +59,10 @@ type MonitoringConfig struct {
 	PollIntervalMs                  int  `yaml:"poll_interval_ms"`
 	// MicSessionLock holds the current recording session open while the
 	// microphone is in active use, even if BlackHole is silent.
-	MicSessionLock    bool `yaml:"mic_session_lock"`
+	MicSessionLock bool `yaml:"mic_session_lock"`
 	// MicReleaseSeconds is the debounce period after mic goes inactive before
 	// the session lock is released. Prevents split jitter when mic briefly toggles.
-	MicReleaseSeconds int  `yaml:"mic_release_seconds"`
+	MicReleaseSeconds int `yaml:"mic_release_seconds"`
 }
 
 // LoggingConfig controls log file output.
