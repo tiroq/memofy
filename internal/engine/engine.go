@@ -32,24 +32,26 @@ type deviceSwitchReq struct {
 
 // Engine is the main recording controller.
 type Engine struct {
-	cfg            config.Config
-	sm             *statemachine.StateMachine
-	mon            *monitor.Monitor
-	stream         *audio.Stream
-	writer         *wav.Writer
-	logger         *log.Logger
-	mu             sync.Mutex
-	running        bool
-	stopCh         chan struct{}
-	recordStart    time.Time
-	outputDir      string
-	currentFile    string
-	deviceName     string
-	lastError      string
-	monSnapshot    monitor.Snapshot
-	version        string
-	formatSpec     audio.FormatSpec
-	deviceSwitchCh chan deviceSwitchReq // pollMonitor → loop(): safe stream-switch requests
+	cfg              config.Config
+	sm               *statemachine.StateMachine
+	mon              *monitor.Monitor
+	stream           *audio.Stream
+	writer           *wav.Writer
+	logger           *log.Logger
+	mu               sync.Mutex
+	running          bool
+	stopCh           chan struct{}
+	recordStart      time.Time
+	outputDir        string
+	currentFile      string
+	deviceName       string
+	lastError        string
+	monSnapshot      monitor.Snapshot
+	version          string
+	formatSpec       audio.FormatSpec
+	deviceSwitchCh   chan deviceSwitchReq // pollMonitor → loop(): safe stream-switch requests
+	initDevice       *audio.DeviceInfo    // the device selected at Start(); used to switch back after meetings
+	micInactiveSince time.Time            // non-zero while mic is inactive; drives the fallback timeout
 }
 
 // StatusSnapshot is a point-in-time view of engine state for the UI.
@@ -136,6 +138,7 @@ func (e *Engine) Start() error {
 	e.logger.Printf("Using device: %s (idx=%d ch=%d rate=%.0f)",
 		dev.Name, dev.Index, dev.MaxInputCh, dev.SampleRate)
 	e.deviceName = dev.Name
+	e.initDevice = dev
 	channels := e.cfg.Audio.Channels
 	if channels > dev.MaxInputCh {
 		channels = dev.MaxInputCh
@@ -327,6 +330,9 @@ func (e *Engine) pollMonitor() {
 			if !prev.MicActive && snap.MicActive {
 				e.logger.Printf("[monitor] mic became active — activating session lock and starting recording")
 				e.sm.SetMicActive(true)
+				e.mu.Lock()
+				e.micInactiveSince = time.Time{} // cancel any pending fallback timeout
+				e.mu.Unlock()
 				// Prefer a dedicated meeting audio device (e.g. "Microsoft Teams Audio")
 				// when available — it captures both sides of the call.
 				// When none exists, record from the current device (typically BlackHole).
@@ -354,6 +360,50 @@ func (e *Engine) pollMonitor() {
 			} else if prev.MicActive && !snap.MicActive {
 				e.logger.Printf("[monitor] mic became inactive — starting session lock release debounce")
 				e.sm.SetMicActive(false)
+				e.mu.Lock()
+				e.micInactiveSince = time.Now()
+				e.mu.Unlock()
+				// Switch back to the original device (e.g. BlackHole). This unblocks
+				// loop() which is likely stuck inside Read() on the meeting device
+				// (Teams Audio stops delivering buffers when the call ends).
+				// startRec: false — we are still recording; just rerouting the source.
+				e.mu.Lock()
+				initDev := e.initDevice
+				s := e.stream
+				e.mu.Unlock()
+				if initDev != nil {
+					req := deviceSwitchReq{device: initDev, startRec: false}
+					select {
+					case e.deviceSwitchCh <- req:
+						if s != nil {
+							s.Stop() // unblock blocked Read() on the meeting device
+						}
+					default:
+						e.logger.Printf("[monitor] device switch-back request dropped: channel full")
+					}
+				}
+			}
+			// Fallback: if loop() is still blocked even after the switch-back (e.g.
+			// BlackHole is also idle), finalize directly from pollMonitor once the
+			// combined release-debounce + silence window has elapsed.
+			e.mu.Lock()
+			micInactiveSince := e.micInactiveSince
+			e.mu.Unlock()
+			if !micInactiveSince.IsZero() {
+				releaseDur := time.Duration(e.cfg.Monitoring.MicReleaseSeconds) * time.Second
+				silenceDur := time.Duration(e.cfg.Audio.SilenceSeconds) * time.Second
+				if time.Since(micInactiveSince) >= releaseDur+silenceDur {
+					state := e.sm.CurrentState()
+					if state == statemachine.StateRecording || state == statemachine.StateSilenceWait {
+						e.logger.Printf("[monitor] fallback finalization: mic inactive for %s, forcing stop",
+							time.Since(micInactiveSince).Truncate(time.Second))
+						e.finalizeRecording()
+						e.sm.Reset()
+					}
+					e.mu.Lock()
+					e.micInactiveSince = time.Time{}
+					e.mu.Unlock()
+				}
 			}
 		}
 	}
