@@ -21,6 +21,7 @@ import (
 	"github.com/tiroq/memofy/internal/autoupdate"
 	"github.com/tiroq/memofy/internal/config"
 	"github.com/tiroq/memofy/internal/engine"
+	"github.com/tiroq/memofy/internal/micdetect"
 	"github.com/tiroq/memofy/internal/pidfile"
 )
 
@@ -40,6 +41,8 @@ func main() {
 		cmdStatus()
 	case "doctor":
 		cmdDoctor()
+	case "doctor-mic":
+		cmdDoctorMic()
 	case "test-audio":
 		cmdTestAudio()
 	case "check-updates":
@@ -65,6 +68,7 @@ Commands:
   run              Start the recording daemon
   status           Show current recording status
   doctor           Check system setup and dependencies
+  doctor-mic       Check microphone usage detection
   test-audio       Test audio capture for 5 seconds
   check-updates    Check for new versions on GitHub
   version          Show version information
@@ -250,6 +254,40 @@ func cmdDoctor() {
 	} else {
 		fmt.Println("Some checks failed. Fix the issues above before running.")
 		os.Exit(1)
+	}
+}
+
+func cmdDoctorMic() {
+	if runtime.GOOS != "darwin" {
+		fmt.Printf("platform: %s\n", runtime.GOOS)
+		fmt.Println("mic detection: unsupported (macOS only)")
+		os.Exit(1)
+	}
+
+	ver := micdetect.MacOSVersionString()
+	fmt.Printf("macOS: %s\n", ver)
+
+	if !micdetect.IsSupported() {
+		fmt.Println("mic detection: unsupported (requires macOS 14+)")
+		os.Exit(1)
+	}
+
+	fmt.Println("mic detection: supported")
+
+	procs, err := micdetect.ActiveMicUsers()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(procs) == 0 {
+		fmt.Println("\nno active microphone users detected")
+		return
+	}
+
+	fmt.Println("active microphone users:")
+	for _, p := range procs {
+		fmt.Printf("  - pid=%d bundle=%s\n", p.PID, p.BundleID)
 	}
 }
 
