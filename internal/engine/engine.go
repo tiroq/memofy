@@ -302,6 +302,15 @@ func (e *Engine) pollMonitor() {
 			e.mu.Unlock()
 			if !prevMicActive && snap.MicActive {
 				e.logger.Printf("[monitor] mic became active — forcing recording start")
+				// Prefer a meeting-specific virtual audio device (e.g. "Microsoft Teams
+				// Audio") over BlackHole, which only captures system audio output.
+				if meetDev := audio.FindMeetingAudioDevice(); meetDev != nil {
+					if err := e.reopenStream(meetDev); err != nil {
+						e.logger.Printf("[monitor] could not switch to meeting device %q: %v", meetDev.Name, err)
+					} else {
+						e.logger.Printf("[monitor] switched capture device to %q", meetDev.Name)
+					}
+				}
 				if e.sm.ForceStartRecording() == statemachine.ActionStartRecording {
 					e.startRecording()
 				}
@@ -408,8 +417,49 @@ func (e *Engine) finalizeRecording() {
 	e.logger.Printf("Finalized: %s (%s)", filepath.Base(finalFile), dur)
 }
 
+// reopenStream stops the current audio stream and opens a new one on dev.
+// Must only be called when not currently recording (idle/arming state).
+func (e *Engine) reopenStream(dev *audio.DeviceInfo) error {
+	e.mu.Lock()
+	oldStream := e.stream
+	e.mu.Unlock()
+
+	if oldStream != nil {
+		oldStream.Stop()
+		oldStream.Close()
+	}
+
+	channels := e.cfg.Audio.Channels
+	if channels > dev.MaxInputCh {
+		channels = dev.MaxInputCh
+	}
+	sampleRate := e.cfg.Audio.SampleRate
+	if sampleRate == 0 {
+		sampleRate = int(dev.SampleRate)
+	}
+
+	stream, err := audio.OpenStream(audio.CaptureConfig{
+		DeviceIndex:     dev.Index,
+		SampleRate:      sampleRate,
+		Channels:        channels,
+		FramesPerBuffer: 4096,
+	})
+	if err != nil {
+		return fmt.Errorf("open stream on %q: %w", dev.Name, err)
+	}
+	if err := stream.Start(); err != nil {
+		stream.Close()
+		return fmt.Errorf("start stream on %q: %w", dev.Name, err)
+	}
+
+	e.mu.Lock()
+	e.stream = stream
+	e.deviceName = dev.Name
+	e.mu.Unlock()
+	return nil
+}
+
 func (e *Engine) findDevice() (*audio.DeviceInfo, error) {
-	// Always log all available input devices to help diagnose capture issues.
 	all := audio.ListInputDevices()
 	for i, d := range all {
 		e.logger.Printf("[devices] [%d] %q ch=%d rate=%.0f", i, d.Name, d.MaxInputCh, d.SampleRate)
