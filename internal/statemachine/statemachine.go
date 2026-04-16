@@ -222,6 +222,21 @@ func (sm *StateMachine) EnterError() {
 	sm.transition(StateError)
 }
 
+// ForceStartRecording immediately transitions from idle or arming to recording.
+// Returns ActionStartRecording if the transition was made, ActionNone otherwise.
+// Used when an external signal (e.g. mic usage detected) should start recording
+// regardless of the current audio RMS level.
+func (sm *StateMachine) ForceStartRecording() Action {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if sm.state != StateIdle && sm.state != StateArming {
+		return ActionNone
+	}
+	sm.recordingStart = time.Now()
+	sm.transition(StateRecording)
+	return ActionStartRecording
+}
+
 // transition changes state and fires the callback.
 func (sm *StateMachine) transition(to State) {
 	from := sm.state
