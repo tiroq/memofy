@@ -325,19 +325,19 @@ func (e *Engine) pollMonitor() {
 					snap.ZoomRunning, snap.ZoomInCall, snap.TeamsRunning, snap.MeetRunning, snap.MicActive, snap.MicBundleIDs)
 			}
 			if !prev.MicActive && snap.MicActive {
-				e.logger.Printf("[monitor] mic became active — activating session lock")
+				e.logger.Printf("[monitor] mic became active — activating session lock and starting recording")
 				e.sm.SetMicActive(true)
-				// If a dedicated meeting audio device exists (e.g. "Microsoft Teams Audio"),
-				// switch to it and start recording immediately: the device change means a
-				// meeting is in progress, even if BlackHole is currently silent.
-				// If no meeting device exists, recording is driven by BlackHole threshold.
-				if meetDev := audio.FindMeetingAudioDevice(); meetDev != nil {
-					req := deviceSwitchReq{device: meetDev, startRec: true}
-					select {
-					case e.deviceSwitchCh <- req:
-					default:
-						e.logger.Printf("[monitor] device switch request dropped: channel full")
-					}
+				// Prefer a dedicated meeting audio device (e.g. "Microsoft Teams Audio")
+				// when available — it captures both sides of the call.
+				// When none exists, record from the current device (typically BlackHole).
+				// Either way, start recording immediately via the device-switch channel:
+				// a nil device means "keep current device but still force-start".
+				meetDev := audio.FindMeetingAudioDevice()
+				req := deviceSwitchReq{device: meetDev, startRec: true}
+				select {
+				case e.deviceSwitchCh <- req:
+				default:
+					e.logger.Printf("[monitor] device switch request dropped: channel full")
 				}
 			} else if prev.MicActive && !snap.MicActive {
 				e.logger.Printf("[monitor] mic became inactive — starting session lock release debounce")
@@ -486,9 +486,10 @@ func (e *Engine) handleDeviceSwitch(req deviceSwitchReq) []float32 {
 			e.logger.Printf("[engine] capture device switched to %q", req.device.Name)
 		}
 	}
-	// Force-start recording only after a successful switch to a dedicated meeting
-	// device. This covers the case where BlackHole is silent at call start (e.g.
-	// no remote audio yet) but the meeting is clearly active.
+	// Force-start recording when requested. When a dedicated device was switched
+	// to, this captures the call even if BlackHole is currently silent. When
+	// device is nil (no meeting device found), recording starts on the current
+	// stream — still the right thing to do when mic usage is detected.
 	if req.startRec {
 		if e.sm.ForceStartRecording() == statemachine.ActionStartRecording {
 			e.startRecording()
