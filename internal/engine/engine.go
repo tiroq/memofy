@@ -336,6 +336,18 @@ func (e *Engine) pollMonitor() {
 				req := deviceSwitchReq{device: meetDev, startRec: true}
 				select {
 				case e.deviceSwitchCh <- req:
+					// BlackHole's AUHAL render callback is not driven when no system audio
+					// is playing, so loop() may be blocked inside Read() indefinitely.
+					// Stop() signals the CoreAudio condition variable, unblocking Read()
+					// immediately so loop() can process the device switch channel.
+					// Stream.Stop()/Close() are mutex-protected so this is safe to call
+					// concurrently with Close() inside loop()'s handleDeviceSwitch.
+					e.mu.Lock()
+					s := e.stream
+					e.mu.Unlock()
+					if s != nil {
+						s.Stop()
+					}
 				default:
 					e.logger.Printf("[monitor] device switch request dropped: channel full")
 				}
