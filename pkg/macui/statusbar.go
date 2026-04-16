@@ -93,11 +93,14 @@ func (app *StatusBarApp) pollAndUpdate() {
 	stateChanged := status.State != app.lastStatus.State
 	recordingChanged := isRecording != app.wasRecording
 
-	if stateChanged {
+	// Detect meeting status changes
+	micChanged := status.MicActive != app.lastStatus.MicActive
+
+	if stateChanged || micChanged {
 		app.updateMenuBarIcon(status)
 		app.rebuildMenu()
-		log.Printf("[status] state=%s device=%q format=%s file=%q error=%q",
-			status.State, status.DeviceName, status.FormatProfile, filepath.Base(status.CurrentFile), status.LastError)
+		log.Printf("[status] state=%s device=%q format=%s file=%q mic=%v error=%q",
+			status.State, status.DeviceName, status.FormatProfile, filepath.Base(status.CurrentFile), status.MicActive, status.LastError)
 	}
 
 	if recordingChanged {
@@ -119,21 +122,45 @@ func (app *StatusBarApp) pollAndUpdate() {
 	app.lastStatus = status
 }
 
-// updateMenuBarIcon sets a state indicator in the button title.
-// The template icon handles its own tinting; we prefix a symbol for active states.
+// updateMenuBarIcon changes the menu bar icon based on engine state.
+// Uses SF Symbols for clear visual distinction between states.
 func (app *StatusBarApp) updateMenuBarIcon(status engine.StatusSnapshot) {
 	button := app.statusItem.Button()
+	button.SetTitle("")
+
 	switch status.State {
 	case "recording":
-		button.SetTitle("⏺")
+		img := appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription(
+			"record.circle.fill", "Recording")
+		img.SetSize(foundation.Size{Width: menubarIconSize, Height: menubarIconSize})
+		img.SetTemplate(false)
+		button.SetImage(img)
+		button.SetContentTintColor(appkit.Color_SystemRedColor())
 	case "silence_wait":
-		button.SetTitle("⏸")
+		img := appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription(
+			"record.circle", "Recording (silence)")
+		img.SetSize(foundation.Size{Width: menubarIconSize, Height: menubarIconSize})
+		img.SetTemplate(false)
+		button.SetImage(img)
+		button.SetContentTintColor(appkit.Color_SystemOrangeColor())
 	case "arming":
-		button.SetTitle("…")
+		img := appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription(
+			"waveform.badge.mic", "Listening")
+		img.SetSize(foundation.Size{Width: menubarIconSize, Height: menubarIconSize})
+		img.SetTemplate(true)
+		button.SetImage(img)
+		button.SetContentTintColor(nil)
 	case "error":
-		button.SetTitle("!")
+		img := appkit.Image_ImageWithSystemSymbolNameAccessibilityDescription(
+			"exclamationmark.triangle.fill", "Error")
+		img.SetSize(foundation.Size{Width: menubarIconSize, Height: menubarIconSize})
+		img.SetTemplate(true)
+		button.SetImage(img)
+		button.SetContentTintColor(nil)
 	default:
-		button.SetTitle("")
+		// idle/other: restore original icon
+		button.SetImage(loadMenubarIcon())
+		button.SetContentTintColor(nil)
 	}
 }
 
@@ -181,6 +208,43 @@ func (app *StatusBarApp) rebuildMenu() {
 		fileItem.SetTitle(fmt.Sprintf("File: %s", filepath.Base(status.CurrentFile)))
 		fileItem.SetEnabled(false)
 		app.menu.AddItem(fileItem)
+	}
+
+	// Meeting/mic status
+	if status.MicActive || status.ZoomRunning || status.TeamsRunning || status.MeetRunning {
+		app.menu.AddItem(appkit.MenuItem_SeparatorItem())
+		if status.MicActive {
+			micItem := appkit.NewMenuItem()
+			micItem.SetTitle("🎙 Microphone in use")
+			micItem.SetEnabled(false)
+			app.menu.AddItem(micItem)
+		}
+		if status.TeamsRunning {
+			teamsItem := appkit.NewMenuItem()
+			if status.MicActive {
+				teamsItem.SetTitle("📞 Teams meeting active")
+			} else {
+				teamsItem.SetTitle("💬 Teams running")
+			}
+			teamsItem.SetEnabled(false)
+			app.menu.AddItem(teamsItem)
+		}
+		if status.ZoomRunning {
+			zoomItem := appkit.NewMenuItem()
+			if status.MicActive {
+				zoomItem.SetTitle("📞 Zoom meeting active")
+			} else {
+				zoomItem.SetTitle("💬 Zoom running")
+			}
+			zoomItem.SetEnabled(false)
+			app.menu.AddItem(zoomItem)
+		}
+		if status.MeetRunning {
+			meetItem := appkit.NewMenuItem()
+			meetItem.SetTitle("💬 Google Meet running")
+			meetItem.SetEnabled(false)
+			app.menu.AddItem(meetItem)
+		}
 	}
 
 	app.menu.AddItem(appkit.MenuItem_SeparatorItem())
