@@ -26,8 +26,8 @@ import (
 type deviceSwitchReq struct {
 	device   *audio.DeviceInfo // non-nil to open a new capture device
 	startRec bool              // true when the new device is a dedicated meeting device;
-	                          // triggers ForceStartRecording after the switch so the call
-	                          // is captured even if BlackHole is currently silent.
+	// triggers ForceStartRecording after the switch so the call
+	// is captured even if BlackHole is currently silent.
 }
 
 // Engine is the main recording controller.
@@ -311,13 +311,20 @@ func (e *Engine) pollMonitor() {
 			return
 		case <-ticker.C:
 			snap := e.mon.Poll()
-			prevMicActive := e.monSnapshot.MicActive
-			e.logger.Printf("[monitor] zoom_open=%v zoom_call=%v teams_open=%v meet=%v mic_active=%v mic_bundles=%v",
-				snap.ZoomRunning, snap.ZoomInCall, snap.TeamsRunning, snap.MeetRunning, snap.MicActive, snap.MicBundleIDs)
+			prev := e.monSnapshot
 			e.mu.Lock()
 			e.monSnapshot = snap
 			e.mu.Unlock()
-			if !prevMicActive && snap.MicActive {
+			// Log only when something actually changed.
+			if snap.ZoomRunning != prev.ZoomRunning ||
+				snap.ZoomInCall != prev.ZoomInCall ||
+				snap.TeamsRunning != prev.TeamsRunning ||
+				snap.MeetRunning != prev.MeetRunning ||
+				snap.MicActive != prev.MicActive {
+				e.logger.Printf("[monitor] zoom_open=%v zoom_call=%v teams_open=%v meet=%v mic_active=%v mic_bundles=%v",
+					snap.ZoomRunning, snap.ZoomInCall, snap.TeamsRunning, snap.MeetRunning, snap.MicActive, snap.MicBundleIDs)
+			}
+			if !prev.MicActive && snap.MicActive {
 				e.logger.Printf("[monitor] mic became active — activating session lock")
 				e.sm.SetMicActive(true)
 				// If a dedicated meeting audio device exists (e.g. "Microsoft Teams Audio"),
@@ -332,7 +339,7 @@ func (e *Engine) pollMonitor() {
 						e.logger.Printf("[monitor] device switch request dropped: channel full")
 					}
 				}
-			} else if prevMicActive && !snap.MicActive {
+			} else if prev.MicActive && !snap.MicActive {
 				e.logger.Printf("[monitor] mic became inactive — starting session lock release debounce")
 				e.sm.SetMicActive(false)
 			}
